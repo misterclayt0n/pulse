@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 import "core:mem"
 import "core:log"
+import "core:unicode/utf8"
 import vmem "core:mem/virtual"
 import eg "engine"
 import rl "vendor:raylib"
@@ -17,17 +18,21 @@ main :: proc() {
 	allocator := vmem.arena_allocator(&arena)
 	defer vmem.arena_destroy(&arena)
 
+	buffer := eg.buffer_init(allocator)
+	eg.buffer_insert_text(&buffer, "hello world")
+
 	rl.SetConfigFlags({.WINDOW_RESIZABLE})
 	rl.InitWindow(1080, 920, "Pulse")
 	defer rl.CloseWindow()
 
-	font := eg.load_font_with_codepoints("fonts/IosevkaNerdFont-Regular.ttf", 100, allocator)
+	font := eg.load_font_with_codepoints("fonts/IosevkaNerdFont-Regular.ttf", 100, text_color, allocator)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		defer rl.EndDrawing()
 
 		rl.ClearBackground(background_color)
-		rl.DrawTextEx(font, "Hello world çç", {10, 10}, f32(font.baseSize), 2, text_color)
+		// rl.DrawTextEx(font, "Hello world çç", {10, 10}, f32(font.baseSize), 2, text_color)
+		eg.buffer_draw(&buffer, {10, 10}, font)
 	}
 }

@@ -3,6 +3,14 @@ package engine
 import rl "vendor:raylib"
 import "core:strings"
 
+// This is mostly a wrapper around a couple of raylib internals, and to make it easy to work with.
+Font :: struct {
+	ray_font:  rl.Font, 
+	size:      i32,
+	spacing:   f32,
+	color:     rl.Color
+}
+
 Extra_Chars :: []rune{'ç'}
 
 // Returns a slice of runes for the ASCII range plus some extra runes.
@@ -31,13 +39,34 @@ gen_ascii_plus :: proc() -> []rune {
 	return codepoints
 }
 
-load_font_with_codepoints :: proc(file: string, size: i32, allocator := context.allocator) -> rl.Font {
+load_font_with_codepoints :: proc(file: string, size: i32, color: rl.Color, allocator := context.allocator) -> Font {
 	codepoints := gen_ascii_plus()
-	file, err := strings.clone_to_cstring(file)
+	file, err := strings.clone_to_cstring(file, allocator)
 
 	// NOTE: If an allocation error occurs like this, just panic
 	assert(err == nil, "Allocation error")
+
+	font := Font {
+		ray_font = rl.LoadFontEx(file, size, &codepoints[0], i32(len(codepoints))),
+		size = size,
+		spacing = 2,
+		color = color,
+	}
 	
-	return rl.LoadFontEx(file, size, &codepoints[0], i32(len(codepoints)))
+	return font
+}
+
+is_char_supported :: proc(char: rune) -> bool {
+	// Always allow newlines (handled separately in rendering).
+	if char == '\n' do return true
+
+	// Check the good ol ASCII range (32-126).
+	if char >= 32 && char <= 126 do return true
+
+	for c in Extra_Chars {
+		if char == c do return true
+	}
+
+	return false
 }
 
