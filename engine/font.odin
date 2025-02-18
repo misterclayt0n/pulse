@@ -2,6 +2,7 @@ package engine
 
 import rl "vendor:raylib"
 import "core:strings"
+import "core:unicode/utf8"
 
 // This is mostly a wrapper around a couple of raylib internals, and to make it easy to work with.
 Font :: struct {
@@ -56,6 +57,10 @@ load_font_with_codepoints :: proc(file: string, size: i32, color: rl.Color, allo
 	return font
 }
 
+// 
+// Helpers
+// 
+
 is_char_supported :: proc(char: rune) -> bool {
 	// Always allow newlines (handled separately in rendering).
 	if char == '\n' do return true
@@ -68,5 +73,28 @@ is_char_supported :: proc(char: rune) -> bool {
 	}
 
 	return false
+}
+
+// Returns the index of the start of the rune that ends at position `pos`.
+// Assumes that `pos` is a valid boundary in the UTF-8 buffer.
+prev_rune_start :: proc(data: []u8, pos: int) -> int {
+	assert(pos >= 0, "Position must be greater or equal than 0")
+
+	i: int = pos - 1
+	// Move backwards until a byte that is not a continuation is found (i.e. not 10xxxxxx).
+	for ; i > 0; i -= 1 {
+		if (data[i] & 0xC0) != 0x80 do break
+	}
+
+	return i
+}
+
+// Returns the length in bytes of the rune starting at position `pos`.
+// Uses the std's UTF-8 decoding.
+next_rune_length :: proc(data: []u8, pos: int) -> int {
+	assert(len(data) >= pos, "The length of the data should be greater or equal than the position")
+
+	_, n_bytes := utf8.decode_rune(data[pos:])
+	return n_bytes
 }
 

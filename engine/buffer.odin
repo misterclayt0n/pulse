@@ -29,6 +29,14 @@ Cursor_Style :: enum {
 	UNDERSCORE,
 }
 
+Cursor_Movement :: enum {
+	LEFT,
+	RIGHT,
+	UP,
+	DOWN,
+	// TODO: A lot more
+}
+
 // Creates a new buffer with a given initial capacity.
 buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buffer {
 	return Buffer {
@@ -85,32 +93,36 @@ buffer_insert_char :: proc(buffer: ^Buffer, char: rune) {
 	offset := buffer.cursor.pos
 	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
 	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
+
+	// Encode rune into UTF-8
+	encoded, n_bytes := utf8.encode_rune(char)
 	
 	// Make space for new character.
-	resize(&buffer.data, len(buffer.data) + 1)
+	resize(&buffer.data, len(buffer.data) + n_bytes)
 
 	// Move existing text to make room.
-	if offset < len(buffer.data) - 1 {
-		copy(buffer.data[offset + 1:], buffer.data[offset:])
+	if offset < len(buffer.data) - n_bytes {
+		copy(buffer.data[offset + n_bytes:], buffer.data[offset:])
 	}
 
 	// Insert new character.
-	buffer.data[offset] = u8(char)
-	buffer.cursor.pos += 1
+	copy(buffer.data[offset:], encoded[0:n_bytes])
+	buffer.cursor.pos += n_bytes
 	buffer.dirty = true
 	buffer_update_line_starts(buffer)
 }
 
 buffer_delete_char :: proc(buffer: ^Buffer) {
-	if buffer.cursor.pos <= 0 do return
+	if buffer.cursor.pos <= 0 do return // NOTE: Stop deleting after the position is 0.
 
-	// Remove characters before cursor.
-	if buffer.cursor.pos < len(buffer.data) {
-		copy(buffer.data[buffer.cursor.pos - 1:], buffer.data[buffer.cursor.pos:])
-	}
-	resize(&buffer.data, len(buffer.data) - 1)
+	start_index := prev_rune_start(buffer.data[:], buffer.cursor.pos)
+	n_bytes := buffer.cursor.pos - start_index // Number of bytes in the rune.
 
-	buffer.cursor.pos += 1
+	// Remove the rune's bytes.
+	copy(buffer.data[start_index:], buffer.data[buffer.cursor.pos:])
+	resize(&buffer.data, len(buffer.data) - n_bytes)
+
+	buffer.cursor.pos = start_index
 	buffer.dirty = true
 	buffer_update_line_starts(buffer)
 }
@@ -136,12 +148,51 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 }
 
 //
+// Movement
+// 
+
+buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
+	switch movement {
+	case .LEFT:
+		if buffer.cursor.pos > 0 {
+			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		}
+	case .RIGHT:
+		if buffer.cursor.pos < len(buffer.data) {
+			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+			buffer.cursor.pos += n_bytes
+		}
+	case .UP: 
+		if buffer.cursor.line > 0 {
+			// Get target col (preserved from the current position).
+			target_col := buffer.cursor.col
+			new_line := buffer.cursor.line - 1 // Move to prev line.
+
+			// Calculate new position.
+			new_line_length := buffer_line_length(buffer, new_line)
+			new_col := min(target_col, new_line_length)
+			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
+		}
+	case .DOWN:
+		if buffer.cursor.line < len(buffer.line_starts) - 1 {
+			// Same stuff as before.
+			target_col := buffer.cursor.col
+			new_line := buffer.cursor.line + 1 // Move to next line.
+
+			new_line_length := buffer_line_length(buffer, new_line)
+			new_col := min(target_col, new_line_length)
+			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
+		}
+	}
+
+	buffer_update_line_starts(buffer)
+}
+
+//
 // Drawing
 // 
 
 buffer_draw :: proc(buffer: ^Buffer, position: rl.Vector2, font: Font) {
-	assert(len(buffer.data) > 0, "We can only draw text if we have some content in the buffer")
-
 	// Ensure null termination for text display.
 	append(&buffer.data, 0)
 	defer resize(&buffer.data, len(buffer.data) - 1)
@@ -157,15 +208,15 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, position: rl.Vector2, font: Font) {
 	// Adjust vertical position based on line number.	
 	cursor_pos.y += f32(buffer.cursor.line) * (f32(font.size) + font.spacing)
 	
-	assert(buffer.cursor.pos > 0, "Cursor position must be greater than 0")
+	assert(buffer.cursor.pos >= 0, "Cursor position must be greater or equal to 0")
 	assert(len(buffer.data) > 0, "Buffer size has to be greater than 0")
 	
 	line_start := buffer.line_starts[buffer.cursor.line]
 	cursor_pos_clamped := min(buffer.cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
-	assert(line_start < cursor_pos_clamped, "Line start index must be less than clamped cursor position")
+	assert(line_start <= cursor_pos_clamped, "Line start index must be less or equal to clamped cursor position")
 
 	line_text := buffer.data[line_start:buffer.cursor.pos]
-	assert(len(line_text) > 0, "Line text must not be empty")
+	assert(len(line_text) >= 0, "Line text cannot be negative")
 
 	temp_text := make([dynamic]u8, len(line_text) + 1)
 	defer delete(temp_text)
@@ -196,4 +247,25 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, position: rl.Vector2, font: Font) {
 			buffer.cursor.color,
 		)
 	}
+}
+
+// 
+// Helpers
+// 
+
+// Returns the length of a specified line.
+buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
+	assert(line < len(buffer.line_starts), "Invalid line index")
+	start := buffer.line_starts[line]
+	end := len(buffer.data)
+
+	if line < len(buffer.line_starts) - 1{
+		end = buffer.line_starts[line + 1]
+
+		// NOTE: Subtract 1 to exclude the newline character.
+		// Only considers visible characters.
+		return end - start - 1
+	}
+
+	return end - start
 }
