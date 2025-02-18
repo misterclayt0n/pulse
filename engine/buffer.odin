@@ -2,6 +2,7 @@ package engine
 
 import "core:mem"
 import "core:unicode/utf8"
+import "core:os"
 import rl "vendor:raylib"
 
 // Buffer stores text as an array of bytes.
@@ -59,6 +60,21 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 buffer_free :: proc(buffer: ^Buffer) {
 	delete(buffer.data)
 	delete(buffer.line_starts)
+}
+
+buffer_load_file :: proc(buffer: ^Buffer, filename: string, allocator := context.allocator) -> bool {
+	data, ok := os.read_entire_file(filename, allocator)
+	if !ok do return false
+
+	// Replace buffer contents.
+	clear(&buffer.data)
+	append(&buffer.data, ..data)
+
+	buffer.cursor.pos = 0
+	buffer.dirty = false
+	buffer_update_line_starts(buffer)
+
+	return true
 }
 
 //
