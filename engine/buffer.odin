@@ -152,13 +152,21 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 // 
 
 buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
+	current_line_start := buffer.line_starts[buffer.cursor.line]
+	current_line_end := len(buffer.data)
+
+	// Calculate line end position.
+	if buffer.cursor.line < len(buffer.line_starts) - 1 {
+		current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+	}
+	
 	switch movement {
 	case .LEFT:
-		if buffer.cursor.pos > 0 {
+		if buffer.cursor.pos > current_line_start {
 			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
 		}
 	case .RIGHT:
-		if buffer.cursor.pos < len(buffer.data) {
+		if buffer.cursor.pos < current_line_end {
 			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
 			buffer.cursor.pos += n_bytes
 		}
