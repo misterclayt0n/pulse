@@ -19,7 +19,7 @@ Cursor :: struct {
 	sel:   int,         
 	line:  int,         
 	col:   int,         
- 	style: Cursor_Style, 
+	style: Cursor_Style,
 	color: rl.Color,    
 	blink: bool,        
 }
