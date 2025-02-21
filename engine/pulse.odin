@@ -73,7 +73,8 @@ pulse_scroll :: proc(p: ^Pulse) {
     cursor_world_y  := 10 + f32(p.buffer.cursor.line) * line_height  // World Y of cursor
     window_height   := f32(rl.GetScreenHeight())
     margin_y        :: 100.0
-    document_height := 10 + f32(p.buffer.line_count) * line_height
+    line_count      := f32(len(p.buffer.line_starts))
+    document_height := 10 + line_count * line_height
     max_target_y    := max(0, document_height - window_height)
 
     // Calculate cursor position relative to current viewport
@@ -88,13 +89,16 @@ pulse_scroll :: proc(p: ^Pulse) {
     p.target_y = clamp(p.target_y, 0, max_target_y) 
 
     // Horizontal scrolling logic. 
-	text_width: f32
-	{
-		temp := get_text_before_cursor(&p.buffer)
-		defer delete(temp)
-		text_width = rl.MeasureTextEx(p.font.ray_font, cstring(raw_data(temp)), f32(p.font.size), p.font.spacing).x
-	}
+    line_start := p.buffer.line_starts[p.buffer.cursor.line]
+    text_slice := p.buffer.data[line_start:p.buffer.cursor.pos]
+    temp_len   := len(text_slice)
+    temp       := make([]u8, temp_len + 1)
 
+    defer delete(temp)
+    if temp_len > 0 do copy(temp, text_slice)
+	temp[temp_len] = 0
+
+    text_width     := rl.MeasureTextEx(p.font.ray_font, cstring(raw_data(temp)), f32(p.font.size), p.font.spacing).x
     cursor_x       := f32(10) + text_width
     window_width   := f32(rl.GetScreenWidth())
     viewport_left  := p.camera.target.x
@@ -120,4 +124,3 @@ pulse_draw :: proc(p: ^Pulse) {
 	buffer_draw(&p.buffer, {10, 10}, p.font)
 	rl.EndMode2D()
 }
-

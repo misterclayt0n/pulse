@@ -1,5 +1,5 @@
 # Buffer 
-- [x] Basic piece structure with naive operations
+- [ ] Basic piece structure with naive operations
 - [ ] Add piece splitting/merging logic
 - [ ] Implement memory-mapped file handling
 - [ ] Add incremental line tracking
