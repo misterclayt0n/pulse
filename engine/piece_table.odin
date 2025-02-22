@@ -1,3 +1,5 @@
+// TODO: Undo, redo
+// TODO: Viewport optimization.
 package engine
 
 import "core:mem"
@@ -84,20 +86,116 @@ piece_table_save :: proc(pt: ^Piece_Table, filename: string) -> bool { return tr
 //
 
 // Convert absolute position to line/column.
-// TODO
-piece_table_pos_to_linecol :: proc(pt: ^Piece_Table, pos: int) -> (line, col: int) { return 0, 0 }
+piece_table_pos_to_linecol :: proc(pt: ^Piece_Table, pos: int) -> (line, col: int) {
+	// ASSERT?
+	if pt.root == nil do return 0, 0 
+
+	current_pos := 0
+	current_line := 0
+	node := pt.root
+	target_pos := clamp(pos, 0, pt.root.cumul_length)
+
+	for node != nil {
+		left_length := node.left != nil ? node.left.cumul_length : 0
+		left_lines := node.left != nil ? node.left.cumul_lines : 0 
+
+		if target_pos < current_pos + left_length {
+			node = node.left
+			continue
+		}
+
+		current_pos += left_length
+		current_line += left_lines
+
+		if target_pos < current_pos + node.length {
+			offset := target_pos - current_pos
+			newlines := count_newlines_in_range(pt, node, offset)
+			last_nl := find_last_newline(pt, node, offset)
+
+			col := offset
+			if last_nl != -1 do col = offset - (last_nl + 1)
+			return current_line + newlines, col
+		}
+	}
+
+	return current_line, pt.root.cumul_length - current_pos
+}
 
 // Convert line/column to absolute position.
 // TODO
-piece_table_linecol_to_pos :: proc(pt: ^Piece_Table, line, col: int) -> int { return 0 }
+piece_table_linecol_to_pos :: proc(pt: ^Piece_Table, line, col: int) -> int {
+	if pt.root == nil do return 0
+    
+    current_line := 0
+    current_pos := 0
+    node := pt.root
+    target_line := clamp(line, 0, pt.root.cumul_lines)
+    
+    for node != nil {
+        left_lines := node.left != nil ? node.left.cumul_lines : 0
+
+        if target_line < current_line + left_lines {
+            node = node.left
+            continue
+        }
+        
+        current_line += left_lines
+
+        if target_line <= current_line + node.lines {
+            line_in_node := target_line - current_line
+            data := pt.original if node.source == .ORIGINAL else pt.add_buffer[:]
+            start_idx := node.start
+            count := 0
+            pos := 0
+            
+            // Find start of target line
+            for i in 0..<node.length {
+            	if line_in_node > 0 {
+            		if data[start_idx + i] == '\n' {
+            			count += 1
+            			if count == line_in_node {
+            				pos = i + 1 // Start after the newline.
+            				break
+            			}
+            		}
+            	} else {
+            		pos = 0
+            		break
+            	}
+            }
+            
+            // Clamp column to line length
+            line_end := node.length
+            for i in pos..<node.length {
+                if data[start_idx + i] == '\n' {
+                    line_end = i
+                    break
+                }
+            }
+            clamped_col := clamp(col, 0, line_end - pos)
+            
+            return current_pos + pos + clamped_col
+        }
+
+        current_line += node.lines
+        current_pos += node.length
+        node = node.right
+    }
+    
+    return pt.root.cumul_length
+}
+
 
 //
 // Text Access
 //
 
 // Get full text of line.
-// TODO
-piece_table_get_line :: proc(pt: ^Piece_Table, line: int) -> string { return "" }
+piece_table_get_line :: proc(pt: ^Piece_Table, line: int) -> string {
+    pos := piece_table_linecol_to_pos(pt, line, 0)
+    end_pos := piece_table_linecol_to_pos(pt, line + 1, 0)
+    return piece_table_get_text(pt, pos, end_pos)
+}
 
 // Get text in range [start, end).
 piece_table_get_text :: proc(pt: ^Piece_Table, start, end: int) -> string {
@@ -137,11 +235,39 @@ piece_table_get_visible :: proc(pt: ^Piece_Table, first_line, max_lines: int) ->
 @(private)
 count_lines :: proc(data: []u8) -> int {
 	count := 0
-	for b in data {
+	for b in data { // This counts actual newlines (n lines = n + 1 line breaks).
 		if b == '\n' do count += 1
 	}
 
 	return count
+}
+
+@(private)
+count_newlines_in_range :: proc(pt: ^Piece_Table, node: ^Piece_Node, offset: int) -> int {
+	data := pt.original if node.source == .ORIGINAL else pt.add_buffer[:]
+	start := node.start
+	end := start + min(offset, node.length)
+	count := 0
+
+	for i in start..<end {
+		if data[i] == '\n' do count += 1
+	}
+
+	return count
+}
+
+@(private)
+find_last_newline :: proc(pt: ^Piece_Table, node: ^Piece_Node, offset: int) -> int {
+	data := pt.original if node.source == .ORIGINAL else pt.add_buffer[:]
+	start := node.start
+	end := start + min(offset, node.length)
+	last := -1
+
+	for i in start..<end {
+		if data[i] == '\n' do last = i - start
+	}
+
+	return last
 }
 
 @(private)
@@ -406,7 +532,7 @@ piece_table_test :: proc(t: ^testing.T) {
     // Test 5: Line counting.
     pt2 := piece_table_init(allocator=allocator)
     piece_table_insert(pt2, "Line1\nLine2\nLine3", 0)
-    testing.expect_value(t, pt2.root.cumul_lines, 2)  // 2 newlines
+    testing.expect_value(t, pt2.root.cumul_lines, 2)  // 2 newlines.
 }
 
 @(test)
@@ -417,14 +543,47 @@ delete_test :: proc(t: ^testing.T) {
     piece_table_insert(pt, "The quick brown fox jumps", 0)
     piece_table_delete(pt, 4, 10)
     
-    // Test 1: Verify text
+    // Test 1: Verify text.
     text := piece_table_get_text(pt, 0, 19)
     testing.expect_value(t, text, "The brown fox jumps")
     
-    // Test 2: Verify tree structure
+    // Test 2: Verify tree structure.
     testing.expect(t, pt.root != nil, "Root should exist")
     testing.expect_value(t, pt.root.cumul_length, 19)
     
-    // Test 3: Verify balance
+    // Test 3: Verify balance.
     testing.expect(t, pt.root.height <= 2, "Tree should remain balanced")
+}
+
+@(test)
+line_tracking_test :: proc(t: ^testing.T) {
+    context.allocator = context.temp_allocator
+    pt := piece_table_init()
+    
+    // Setup multiline text.
+    piece_table_insert(pt, "Line1\nLine2\nLine3", 0)
+    
+    // Test position to line/col.
+    line, col := piece_table_pos_to_linecol(pt, 0)
+    testing.expect_value(t, line, 0)
+    testing.expect_value(t, col, 0)
+    
+    line, col = piece_table_pos_to_linecol(pt, 6)
+    testing.expect_value(t, line, 1)
+    testing.expect_value(t, col, 0)
+    
+    line, col = piece_table_pos_to_linecol(pt, 12)
+    testing.expect_value(t, line, 2)
+    testing.expect_value(t, col, 0)
+    
+    // Test line/col to position.
+    pos := piece_table_linecol_to_pos(pt, 0, 4)
+    testing.expect_value(t, pos, 4)  // 'Line1' last character.
+    
+    pos = piece_table_linecol_to_pos(pt, 1, 10)
+    testing.expect_value(t, pos, 11)  // Clamped to end of line2.
+    
+    // Verify full line text.
+    line_text := piece_table_get_line(pt, 1)
+    testing.expect_value(t, line_text, "Line2\n")
 }
