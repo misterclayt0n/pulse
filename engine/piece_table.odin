@@ -4,6 +4,7 @@ package engine
 
 import "core:mem"
 import "core:os"
+import "core:math"
 import "core:log"
 import "core:strings"
 import "core:testing"
@@ -129,7 +130,6 @@ piece_table_pos_to_linecol :: proc(pt: ^Piece_Table, pos: int) -> (line, col: in
 }
 
 // Convert line/column to absolute position.
-// TODO
 piece_table_linecol_to_pos :: proc(pt: ^Piece_Table, line, col: int) -> int {
 	if pt.root == nil do return 0
     
@@ -232,8 +232,37 @@ piece_table_next_rune :: proc(pt: ^Piece_Table, pos: int) -> int { return 0 }
 //
 
 // Get text for visible viewport.
-// TODO
-piece_table_get_visible :: proc(pt: ^Piece_Table, first_line, max_lines: int) -> (text: string, actual_lines: int) { return "", 0 }
+// NOTE: Maybe this should be 1 index based?
+piece_table_get_visible :: proc(pt: ^Piece_Table, first_line, max_lines: int) -> (text: string, actual_lines: int) {
+    builder := strings.builder_make(context.temp_allocator)
+    current_line := 0
+    lines_collected := 0
+    node := pt.root
+
+    // Traverse tree in-order
+	traverse :: proc(node: ^Piece_Node, first: int, max: int, current_line: ^int, lines_collected: ^int, builder: ^strings.Builder, pt: ^Piece_Table) {
+        if node == nil do return
+        
+		traverse(node.left, first, max, current_line, lines_collected, builder, pt)
+		start_line_in_node := math.max(first - current_line^, 0)
+        end_line_in_node := min(node.lines + 1, max - lines_collected^ + start_line_in_node)
+        
+        if start_line_in_node < end_line_in_node && lines_collected^ < max {
+            data := pt.original if node.source == .ORIGINAL else pt.add_buffer[:]
+            start_idx := find_line_start(data, node.start, start_line_in_node)
+            end_idx := find_line_start(data, start_idx, end_line_in_node - start_line_in_node)
+            
+            strings.write_bytes(builder, data[start_idx:end_idx])
+            lines_collected^ += end_line_in_node - start_line_in_node
+        }
+        
+        current_line^ += node.lines + 1
+        traverse(node.right, first, max, current_line, lines_collected, builder, pt)
+    }
+    
+    traverse(pt.root, first_line, max_lines, &current_line, &lines_collected, &builder, pt)
+    return strings.to_string(builder), lines_collected
+}
 
 //
 // Private helpers
@@ -275,6 +304,21 @@ find_last_newline :: proc(pt: ^Piece_Table, node: ^Piece_Node, offset: int) -> i
 	}
 
 	return last
+}
+
+@(private)
+find_line_start :: proc(data: []u8, start_idx: int, target_line: int) -> int {
+	line_count := 0 
+	for i in start_idx..<len(data) {
+		if data[i] == '\n' {
+			line_count += 1 
+			if line_count == target_line {
+				return i + 1 // Return position after newline.
+			}
+		}
+	}
+
+	return start_idx
 }
 
 @(private)
@@ -619,4 +663,13 @@ save_test :: proc(t: ^testing.T) {
     
     data, _ := os.read_entire_file("testfile.txt")
     testing.expect_value(t, string(data), "Test content")
+}
+
+@(test)
+viewport_test :: proc(t: ^testing.T) {
+    pt := piece_table_init()
+    piece_table_insert(pt, "Line1\nLine2\nLine3\nLine4", 0)
+    text, lines := piece_table_get_visible(pt, 1, 2)
+    testing.expect_value(t, text, "Line2\nLine3\n") 
+    testing.expect_value(t, lines, 2)
 }
