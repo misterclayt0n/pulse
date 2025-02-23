@@ -78,8 +78,15 @@ piece_table_delete :: proc(pt: ^Piece_Table, start, end: int) {
 }
 
 // Write out to file.
-// TODO
-piece_table_save :: proc(pt: ^Piece_Table, filename: string) -> bool { return true }
+piece_table_save :: proc(pt: ^Piece_Table, filename: string, allocator := context.allocator) -> bool {
+	// ASSERT?
+	if pt.root == nil do return false // Handle empty document case.
+	
+	data := make([dynamic]u8, 0, pt.root.cumul_length, allocator)
+	traverse_tree_save(pt.root, pt, &data)
+	defer delete(data)
+	return os.write_entire_file(filename, data[:])
+}
 
 //
 // Navigation
@@ -501,6 +508,21 @@ traverse_tree :: proc(node: ^Piece_Node, start, end: int, current_pos: ^int, pt:
     // Traverse right.
     traverse_tree(node.right, start, end, current_pos, pt, builder)
 }
+ 
+traverse_tree_save :: proc(node: ^Piece_Node, pt: ^Piece_Table, data: ^[dynamic]u8) {
+	// ASSERT?
+	// data := data
+	if node == nil do return
+	traverse_tree_save(node.left, pt, data)
+
+	src := pt.original if node.source == .ORIGINAL else pt.add_buffer[:]
+	start := node.start
+	end := start + node.length
+	append_elems(data, ..src[start:end])
+
+	traverse_tree_save(node.right, pt, data)
+}
+
 
 //
 // Tests
@@ -586,4 +608,15 @@ line_tracking_test :: proc(t: ^testing.T) {
     // Verify full line text.
     line_text := piece_table_get_line(pt, 1)
     testing.expect_value(t, line_text, "Line2\n")
+}
+
+@(test)
+save_test :: proc(t: ^testing.T) {
+    pt := piece_table_init()
+    piece_table_insert(pt, "Test content", 0)
+    ok := piece_table_save(pt, "testfile.txt")
+    defer os.remove("testfile.txt")
+    
+    data, _ := os.read_entire_file("testfile.txt")
+    testing.expect_value(t, string(data), "Test content")
 }
