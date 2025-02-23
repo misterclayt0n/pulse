@@ -1,5 +1,4 @@
 // TODO: Undo, redo
-// TODO: Viewport optimization.
 package engine
 
 import "core:mem"
@@ -8,6 +7,7 @@ import "core:math"
 import "core:log"
 import "core:strings"
 import "core:testing"
+import "core:unicode/utf8"
 
 // Indicates whether a piece comes from the original (immutable) file or the add buffer (where new text is appended).
 Piece_Source :: enum {
@@ -221,11 +221,99 @@ piece_table_get_text :: proc(pt: ^Piece_Table, start, end: int) -> string {
 
 // Previous UTF-8 rune position.
 // TODO
-piece_table_prev_rune :: proc(pt: ^Piece_Table, pos: int) -> int { return 0 }
+piece_table_prev_rune :: proc(pt: ^Piece_Table, pos: int) -> int {
+    if pos <= 0 do return 0
+    if pt.root == nil do return 0
+    
+    // Get previous byte position.
+    target_pos := pos - 1
+    current_pos := 0
+    node := pt.root
+    piece: ^Piece_Node
+    piece_offset := 0
+	piece_left_size := 0  // Track left subtree size.
+    
+    // Find which piece contains the target position.
+    for node != nil {
+        left_size := node.left != nil ? node.left.cumul_length : 0
+        
+        if target_pos < current_pos + left_size {
+            node = node.left
+            continue
+        }
+        current_pos += left_size
+        
+        if target_pos < current_pos + node.length {
+            piece = node
+			piece_left_size = left_size  // Store left subtree size.
+            piece_offset = target_pos - current_pos
+            break
+        }
+        current_pos += node.length
+        node = node.right
+    }
+    
+    if piece == nil do return pos - 1
+    
+    // Get the data source
+    data := pt.original if piece.source == .ORIGINAL else pt.add_buffer[:]
+    start := piece.start
+    i := start + piece_offset
+    
+	// Scan backward to find rune start.
+    for i > start && (data[i] & 0xC0) == 0x80 {
+        i -= 1
+    }
+    
+    // Calculate global position
+    prev_rune_pos := (i - start) + (current_pos - piece_left_size)
+    return math.max(prev_rune_pos, 0)
+}
 
 // Next UTF-8 rune position.
 // TODO
-piece_table_next_rune :: proc(pt: ^Piece_Table, pos: int) -> int { return 0 }
+piece_table_next_rune :: proc(pt: ^Piece_Table, pos: int) -> int {
+	if pt.root == nil do return pos
+    total_length := pt.root.cumul_length
+    if pos >= total_length do return pos
+    
+    current_pos := 0
+    node := pt.root
+    piece: ^Piece_Node
+    piece_offset := 0
+    
+    // Find which piece contains the position
+    for node != nil {
+        left_size := node.left != nil ? node.left.cumul_length : 0
+        
+        if pos < current_pos + left_size {
+            node = node.left
+            continue
+        }
+        current_pos += left_size
+        
+        if pos < current_pos + node.length {
+            piece = node
+            piece_offset = pos - current_pos
+            break
+        }
+        current_pos += node.length
+        node = node.right
+    }
+    
+    if piece == nil do return pos
+    
+    // Get the data source
+    data := pt.original if piece.source == .ORIGINAL else pt.add_buffer[:]
+    start := piece.start + piece_offset
+    end := piece.start + piece.length
+    
+    // Decode UTF-8 rune
+    if start >= end do return pos
+    _, width := utf8.decode_rune(data[start:min(end, start+4)])
+    
+    return min(pos + width, total_length)
+}
 
 //
 // Rendering
@@ -553,6 +641,7 @@ traverse_tree :: proc(node: ^Piece_Node, start, end: int, current_pos: ^int, pt:
     traverse_tree(node.right, start, end, current_pos, pt, builder)
 }
  
+@(private)
 traverse_tree_save :: proc(node: ^Piece_Node, pt: ^Piece_Table, data: ^[dynamic]u8) {
 	// ASSERT?
 	// data := data
@@ -672,4 +761,26 @@ viewport_test :: proc(t: ^testing.T) {
     text, lines := piece_table_get_visible(pt, 1, 2)
     testing.expect_value(t, text, "Line2\nLine3\n") 
     testing.expect_value(t, lines, 2)
+}
+
+@(test)
+cursor_movement_test :: proc(t: ^testing.T) {
+    pt := piece_table_init()
+    
+    // Test multi-byte characters (ç = 2 bytes,  = 4 bytes).
+    piece_table_insert(pt, "açb", 0)
+    
+    // Test next rune.
+    testing.expect_value(t, piece_table_next_rune(pt, 0), 1) // a -> ç.
+    testing.expect_value(t, piece_table_next_rune(pt, 1), 3) // ç -> b.
+    testing.expect_value(t, piece_table_next_rune(pt, 3), 4) // b -> end.
+    
+    // Test prev rune.
+    testing.expect_value(t, piece_table_prev_rune(pt, 4), 3) // end -> b.
+    testing.expect_value(t, piece_table_prev_rune(pt, 3), 1) // b -> ç.
+    testing.expect_value(t, piece_table_prev_rune(pt, 1), 0) // ç -> a.
+    
+    // Test edge cases.
+    testing.expect_value(t, piece_table_prev_rune(pt, 0), 0)
+    testing.expect_value(t, piece_table_next_rune(pt, 4), 4)
 }
