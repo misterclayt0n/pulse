@@ -13,7 +13,7 @@ main :: proc() {
 	allocator := vmem.arena_allocator(&arena)
 	defer vmem.arena_destroy(&arena)
 
-	// Get filename from cli
+	// Get filename from cli.
 	filename := ""
 	if len(os.args) > 1 do filename = os.args[1]
 	fmt.println(filename)
@@ -26,7 +26,7 @@ main :: proc() {
 
 	if filename != "" {
 		if ok := eg.buffer_load_file(&pulse.buffer, filename, allocator); !ok {
-			// TODO: Handle this error a bit better
+			// TODO: Handle this error a bit better.
 			fmt.eprintln("Failed to load file:", filename) 
 		} 
 	}
@@ -39,6 +39,6 @@ main :: proc() {
 
 		eg.pulse_update(&pulse)
 		
-		eg.pulse_draw(&pulse)
+		eg.pulse_draw(&pulse, allocator)
 	}
 }

@@ -3,6 +3,7 @@ package engine
 import "core:mem"
 import "core:unicode/utf8"
 import "core:os"
+import "core:strings"
 import rl "vendor:raylib"
 
 // Buffer stores text as an array of bytes.
@@ -37,6 +38,18 @@ Cursor_Movement :: enum {
 	DOWN,
 	// TODO: A lot more
 }
+
+// This struct holds parameters used during buffer drawing.
+Draw_Context :: struct {
+	position:      rl.Vector2,
+    screen_width:  i32,
+    screen_height: i32,
+    first_line:    int,
+    last_line:     int,
+    line_height:   int,
+}
+
+
 
 // Creates a new buffer with a given initial capacity.
 buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buffer {
@@ -110,7 +123,7 @@ buffer_insert_char :: proc(buffer: ^Buffer, char: rune) {
 	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
 	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
 
-	// Encode rune into UTF-8
+	// Encode rune into UTF-8.
 	encoded, n_bytes := utf8.encode_rune(char)
 	
 	// Make space for new character.
@@ -143,6 +156,7 @@ buffer_delete_char :: proc(buffer: ^Buffer) {
 	buffer_update_line_starts(buffer)
 }
 
+// REFACTOR: This function takes quite a lot of cost
 buffer_update_line_starts :: proc(buffer: ^Buffer) {
 	// Clear existing line starts and add first line
 	clear(&buffer.line_starts)
@@ -216,18 +230,16 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 // Drawing
 // 
 
-buffer_draw :: proc(buffer: ^Buffer, position: rl.Vector2, font: Font) {
-	// Ensure null termination for text display.
-	append(&buffer.data, 0)
-	defer resize(&buffer.data, len(buffer.data) - 1)
-	// Draw main text.
-	rl.DrawTextEx(font.ray_font, cstring(&buffer.data[0]), position, f32(font.size), font.spacing, font.color)
+buffer_draw :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context, allocator := context.allocator) {
+    buffer_draw_scissor_begin(ctx)
+	defer buffer_draw_scissor_end()
 
-	buffer_draw_cursor(buffer, position, font)
+    buffer_draw_visible_lines(buffer, font, ctx, allocator)
+    buffer_draw_cursor(buffer, font, ctx)
 }
 
-buffer_draw_cursor :: proc(buffer: ^Buffer, position: rl.Vector2, font: Font) {
-	cursor_pos := position
+buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
+	cursor_pos := ctx.position
 	
 	// Adjust vertical position based on line number.	
 	cursor_pos.y += f32(buffer.cursor.line) * (f32(font.size) + font.spacing)
@@ -273,6 +285,36 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, position: rl.Vector2, font: Font) {
 	}
 }
 
+// Draws only the visible lines.
+buffer_draw_visible_lines :: proc(
+    buffer: ^Buffer,
+    font: Font,
+    ctx: Draw_Context,
+	allocator := context.allocator
+) {
+    for line in ctx.first_line ..= ctx.last_line {
+        line_start := buffer.line_starts[line]
+        line_end   := len(buffer.data)
+        if line < len(buffer.line_starts) - 1 {
+            // Exclude newline.
+            line_end = buffer.line_starts[line + 1] - 1
+        }
+        // Convert the line slice to a C-string.
+        line_text := buffer.data[line_start:line_end]
+        line_str := strings.clone_to_cstring(string(line_text), allocator)
+
+        y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+        rl.DrawTextEx(
+            font.ray_font,
+            line_str,
+            rl.Vector2{ ctx.position.x, y_pos },
+            f32(font.size),
+            font.spacing,
+            font.color,
+        )
+    }
+}
+
 // 
 // Helpers
 // 
@@ -293,3 +335,18 @@ buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
 
 	return end - start
 }
+
+// Begin and end scissor mode using the draw context.
+buffer_draw_scissor_begin :: proc(ctx: Draw_Context) {
+    rl.BeginScissorMode(
+        i32(ctx.position.x),
+        i32(ctx.position.y),
+        ctx.screen_width,
+        ctx.screen_height,
+    )
+}
+
+buffer_draw_scissor_end :: proc() {
+    rl.EndScissorMode()
+}
+
