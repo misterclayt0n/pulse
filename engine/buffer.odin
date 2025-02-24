@@ -49,8 +49,6 @@ Draw_Context :: struct {
     line_height:   int,
 }
 
-
-
 // Creates a new buffer with a given initial capacity.
 buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buffer {
 	return Buffer {
