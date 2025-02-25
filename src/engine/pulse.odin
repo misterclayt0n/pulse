@@ -1,6 +1,7 @@
 package engine
 
 import rl "vendor:raylib"
+import "core:fmt"
 
 // 
 // Globals
@@ -14,6 +15,7 @@ scroll_smoothness :: 0.2
 Pulse :: struct {
 	buffer:         Buffer, // NOTE: This is probably being removed for a window system.
 	font:           Font,
+	status_line:    Status_Line,
 	mode:           Vim_Mode,
 	command_buffer: Command_Buffer,
 	camera:         rl.Camera2D,
@@ -25,10 +27,12 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	buffer := buffer_init(allocator)
 	font := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
 	command_buffer := command_buffer_init(allocator)
+	status_line := status_line_init(font)
 	
 	return Pulse {
 		buffer = buffer,
 		font = font,
+		status_line = status_line,
 		mode = .NORMAL,
 		command_buffer = command_buffer,
 		camera = rl.Camera2D {
@@ -62,6 +66,11 @@ pulse_update :: proc(p: ^Pulse) {
 			key = rl.GetCharPressed()
 		} 
 	}
+
+	// Update status line information.
+    p.status_line.mode = fmt.tprintf("%v", p.mode)
+    p.status_line.line_number = p.buffer.cursor.line
+    p.status_line.col_number = p.buffer.cursor.col
 
 	pulse_scroll(p)
 }
@@ -121,6 +130,7 @@ pulse_scroll :: proc(p: ^Pulse) {
 pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	screen_width  := rl.GetScreenWidth()
     screen_height := rl.GetScreenHeight()
+	status_line_draw(&p.status_line, screen_width, screen_height)
     line_height   := f32(p.font.size) + p.font.spacing
 
     first_visible_line := int((p.camera.target.y - 10) / line_height)

@@ -243,7 +243,7 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 	cursor_pos.y += f32(buffer.cursor.line) * (f32(font.size) + font.spacing)
 	
 	assert(buffer.cursor.pos >= 0, "Cursor position must be greater or equal to 0")
-	assert(len(buffer.data) > 0, "Buffer size has to be greater than 0")
+	assert(len(buffer.data) >= 0, "Buffer size has to be greater or equal to 0")
 	
 	line_start := buffer.line_starts[buffer.cursor.line]
 	cursor_pos_clamped := min(buffer.cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
