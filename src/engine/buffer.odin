@@ -52,14 +52,15 @@ Draw_Context :: struct {
 // Creates a new buffer with a given initial capacity.
 buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buffer {
 	return Buffer {
-		data = make([dynamic]u8, 0, initial_cap, allocator),
+		data        = make([dynamic]u8, 0, initial_cap, allocator),
 		line_starts = make([dynamic]int, 1, 64, allocator),
-		dirty = false,
+		dirty       = false,
+
 		cursor = Cursor {
-			pos = 0,
-			sel = 0,
-			line = 0,
-			col = 0,
+			pos   = 0,
+			sel   = 0,
+			line  = 0,
+			col   = 0,
 			style = .BLOCK,
 			color = rl.GRAY,
 			blink = false
@@ -111,7 +112,7 @@ buffer_insert_text :: proc(buffer: ^Buffer, text: string) {
 	// Insert new text.
 	copy(buffer.data[offset:], text_bytes)
 	buffer.cursor.pos += len(text_bytes)
-	buffer.dirty = true
+	buffer.dirty       = true
 	buffer_update_line_starts(buffer)
 }
 
@@ -135,7 +136,7 @@ buffer_insert_char :: proc(buffer: ^Buffer, char: rune) {
 	// Insert new character.
 	copy(buffer.data[offset:], encoded[0:n_bytes])
 	buffer.cursor.pos += n_bytes
-	buffer.dirty = true
+	buffer.dirty       = true
 	buffer_update_line_starts(buffer)
 }
 
@@ -143,14 +144,14 @@ buffer_delete_char :: proc(buffer: ^Buffer) {
 	if buffer.cursor.pos <= 0 do return // NOTE: Stop deleting after the position is 0.
 
 	start_index := prev_rune_start(buffer.data[:], buffer.cursor.pos)
-	n_bytes := buffer.cursor.pos - start_index // Number of bytes in the rune.
+	n_bytes     := buffer.cursor.pos - start_index // Number of bytes in the rune.
 
 	// Remove the rune's bytes.
 	copy(buffer.data[start_index:], buffer.data[buffer.cursor.pos:])
 	resize(&buffer.data, len(buffer.data) - n_bytes)
 
 	buffer.cursor.pos = start_index
-	buffer.dirty = true
+	buffer.dirty      = true
 	buffer_update_line_starts(buffer)
 }
 
@@ -181,7 +182,7 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 
 buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	current_line_start := buffer.line_starts[buffer.cursor.line]
-	current_line_end := len(buffer.data)
+	current_line_end   := len(buffer.data)
 
 	// Calculate line end position.
 	if buffer.cursor.line < len(buffer.line_starts) - 1 {
@@ -202,21 +203,21 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 		if buffer.cursor.line > 0 {
 			// Get target col (preserved from the current position).
 			target_col := buffer.cursor.col
-			new_line := buffer.cursor.line - 1 // Move to prev line.
+			new_line   := buffer.cursor.line - 1 // Move to prev line.
 
 			// Calculate new position.
-			new_line_length := buffer_line_length(buffer, new_line)
-			new_col := min(target_col, new_line_length)
+			new_line_length  := buffer_line_length(buffer, new_line)
+			new_col          := min(target_col, new_line_length)
 			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
 		}
 	case .DOWN:
 		if buffer.cursor.line < len(buffer.line_starts) - 1 {
 			// Same stuff as before.
 			target_col := buffer.cursor.col
-			new_line := buffer.cursor.line + 1 // Move to next line.
+			new_line   := buffer.cursor.line + 1 // Move to next line.
 
-			new_line_length := buffer_line_length(buffer, new_line)
-			new_col := min(target_col, new_line_length)
+			new_line_length  := buffer_line_length(buffer, new_line)
+			new_col          := min(target_col, new_line_length)
 			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
 		}
 	}
@@ -245,7 +246,7 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 	assert(buffer.cursor.pos >= 0, "Cursor position must be greater or equal to 0")
 	assert(len(buffer.data) >= 0, "Buffer size has to be greater or equal to 0")
 	
-	line_start := buffer.line_starts[buffer.cursor.line]
+	line_start         := buffer.line_starts[buffer.cursor.line]
 	cursor_pos_clamped := min(buffer.cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
 	assert(line_start <= cursor_pos_clamped, "Line start index must be less or equal to clamped cursor position")
 
@@ -299,7 +300,7 @@ buffer_draw_visible_lines :: proc(
         }
         // Convert the line slice to a C-string.
         line_text := buffer.data[line_start:line_end]
-        line_str := strings.clone_to_cstring(string(line_text), allocator)
+        line_str  := strings.clone_to_cstring(string(line_text), allocator)
 
         y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
         rl.DrawTextEx(
@@ -321,7 +322,7 @@ buffer_draw_visible_lines :: proc(
 buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
 	assert(line < len(buffer.line_starts), "Invalid line index")
 	start := buffer.line_starts[line]
-	end := len(buffer.data)
+	end   := len(buffer.data)
 
 	if line < len(buffer.line_starts) - 1{
 		end = buffer.line_starts[line + 1]

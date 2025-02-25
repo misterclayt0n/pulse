@@ -7,14 +7,14 @@ Vim_Mode :: enum {
 	CLI,
 }
 
-Command_Buffer :: struct {
+Vim_State :: struct {
 	commands:     [dynamic]u8, // Stores commands like "dd".
 	last_command: string       // For repeating commands.
 }
 
-command_buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Command_Buffer {
-	return Command_Buffer {
-		commands = make([dynamic]u8, 0, 1024, allocator),
+vim_state_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Vim_State {
+	return Vim_State {
+		commands     = make([dynamic]u8, 0, 1024, allocator),
 		// TODO: This should store commands from before, not when I initialize the editor state.
 		last_command = "",
 	}
@@ -29,7 +29,7 @@ change_mode :: proc(buffer: ^Buffer, current_mode: ^Vim_Mode, target_mode: Vim_M
 			return
 		}
 	case .INSERT:
-		if current_mode^ == .NORMAL do current_mode ^ = .INSERT
+		if current_mode^ == .NORMAL do current_mode^ = .INSERT
 	}
 }
 

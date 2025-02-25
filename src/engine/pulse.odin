@@ -13,36 +13,33 @@ scroll_smoothness :: 0.2
 
 // Main state of the editor,
 Pulse :: struct {
-	buffer:         Buffer, // NOTE: This is probably being removed for a window system.
+	buffer:         Buffer,      // NOTE: This is probably being removed for a window system.
 	font:           Font,
 	status_line:    Status_Line,
 	mode:           Vim_Mode,
-	command_buffer: Command_Buffer,
+	command_buffer: Vim_State,
 	camera:         rl.Camera2D,
 	target_x:       f32,
 	target_y:       f32,
 }
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
-	buffer := buffer_init(allocator)
-	font := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
-	command_buffer := command_buffer_init(allocator)
-	status_line := status_line_init(font)
+	buffer         := buffer_init(allocator)
+	font           := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
+	command_buffer := vim_state_init(allocator)
+	status_line    := status_line_init(font)
+	camera         := rl.Camera2D { offset = {0, 0}, target = {0, 0}, rotation = 0, zoom = 1 }
+
 	
 	return Pulse {
-		buffer = buffer,
-		font = font,
-		status_line = status_line,
-		mode = .NORMAL,
+		buffer         = buffer,
+		font           = font,
+		status_line    = status_line,
+		mode           = .NORMAL,
 		command_buffer = command_buffer,
-		camera = rl.Camera2D {
-			offset = {0, 0},
-			target = {0, 0},
-			rotation = 0,
-			zoom = 1
-		},
-		target_x = 0,
-		target_y = 0,
+		camera         = camera,
+		target_x       = 0,
+		target_y       = 0,
 	}
 }
 
@@ -68,9 +65,9 @@ pulse_update :: proc(p: ^Pulse) {
 	}
 
 	// Update status line information.
-    p.status_line.mode = fmt.tprintf("%v", p.mode)
+    p.status_line.mode        = fmt.tprintf("%v", p.mode)
     p.status_line.line_number = p.buffer.cursor.line
-    p.status_line.col_number = p.buffer.cursor.col
+    p.status_line.col_number  = p.buffer.cursor.col
 
 	pulse_scroll(p)
 }
@@ -139,12 +136,12 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
     last_visible_line  = min(len(p.buffer.line_starts)-1, last_visible_line)
 
     ctx := Draw_Context{
-        position =      rl.Vector2{10, 10},
-        screen_width =  screen_width,
+        position      = rl.Vector2{10, 10},
+        screen_width  = screen_width,
         screen_height = screen_height,
-        first_line =    first_visible_line,
-        last_line =     last_visible_line,
-        line_height =   int(line_height),
+        first_line    = first_visible_line,
+        last_line     = last_visible_line,
+        line_height   = int(line_height),
     }
 
     rl.ClearBackground(background_color)

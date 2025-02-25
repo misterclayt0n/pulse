@@ -17,11 +17,11 @@ Status_Line :: struct {
 status_line_init :: proc(font: Font) -> Status_Line {
 	return Status_Line {
 		text_color = rl.WHITE,
-		bg_color = rl.Color{40, 40, 40, 255},
-		mode = "NORMAL",
-		filename = "some file",
-		font = font,
-		padding = 10,
+		bg_color   = rl.Color{40, 40, 40, 255},
+		mode       = "NORMAL",
+		filename   = "some file",
+		font       = font,
+		padding    = 10,
 	}
 }
 
