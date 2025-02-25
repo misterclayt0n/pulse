@@ -37,7 +37,7 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	rl.DrawRectangleRec(bg_rect, s.bg_color)
 
 	status_text := fmt.tprintf(
-		"%s | %s | Ln %d, Col %d",
+		"%s | %s | %d:%d",
 		s.mode,
 		s.filename,
 		s.line_number + 1,

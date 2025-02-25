@@ -20,6 +20,7 @@ main :: proc() {
 
 	rl.SetConfigFlags({.WINDOW_RESIZABLE})
 	rl.InitWindow(1080, 920, "Pulse")
+	rl.SetWindowMonitor(0)
 	defer rl.CloseWindow()
 	
 	pulse := eg.pulse_init("fonts/IosevkaNerdFont-Regular.ttf", allocator)
