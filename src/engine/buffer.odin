@@ -1,15 +1,15 @@
 package engine
 
 import "core:mem"
-import "core:unicode/utf8"
 import "core:os"
 import "core:strings"
+import "core:unicode/utf8"
 import rl "vendor:raylib"
 
 // Buffer stores text as an array of bytes.
 // TODO: Refactor this to use a rope?
 Buffer :: struct {
-	data:        [dynamic]u8,  // Dynamic array of bytes that contains text.
+	data:        [dynamic]u8, // Dynamic array of bytes that contains text.
 	line_starts: [dynamic]int, // Indexes of the beginning of each line in the array byte.
 	dirty:       bool,         // If the buffer has been modified.
 	cursor:      Cursor,
@@ -42,11 +42,11 @@ Cursor_Movement :: enum {
 // This struct holds parameters used during buffer drawing.
 Draw_Context :: struct {
 	position:      rl.Vector2,
-    screen_width:  i32,
-    screen_height: i32,
-    first_line:    int,
-    last_line:     int,
-    line_height:   int,
+	screen_width:  i32,
+	screen_height: i32,
+	first_line:    int,
+	last_line:     int,
+	line_height:   int,
 }
 
 // Creates a new buffer with a given initial capacity.
@@ -55,7 +55,6 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 		data        = make([dynamic]u8, 0, initial_cap, allocator),
 		line_starts = make([dynamic]int, 1, 64, allocator),
 		dirty       = false,
-
 		cursor = Cursor {
 			pos   = 0,
 			sel   = 0,
@@ -63,7 +62,7 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 			col   = 0,
 			style = .UNDERSCORE,
 			color = rl.GRAY,
-			blink = false
+			blink = false,
 		},
 	}
 }
@@ -74,7 +73,11 @@ buffer_free :: proc(buffer: ^Buffer) {
 	delete(buffer.line_starts)
 }
 
-buffer_load_file :: proc(buffer: ^Buffer, filename: string, allocator := context.allocator) -> bool {
+buffer_load_file :: proc(
+	buffer: ^Buffer,
+	filename: string,
+	allocator := context.allocator,
+) -> bool {
 	data, ok := os.read_entire_file(filename, allocator)
 	if !ok do return false
 
@@ -229,12 +232,17 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 // Drawing
 //
 
-buffer_draw :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context, allocator := context.allocator) {
-    buffer_draw_scissor_begin(ctx)
+buffer_draw :: proc(
+	buffer: ^Buffer,
+	font: Font,
+	ctx: Draw_Context,
+	allocator := context.allocator,
+) {
+	buffer_draw_scissor_begin(ctx)
 	defer buffer_draw_scissor_end()
 
-    buffer_draw_visible_lines(buffer, font, ctx, allocator)
-    buffer_draw_cursor(buffer, font, ctx)
+	buffer_draw_visible_lines(buffer, font, ctx, allocator)
+	buffer_draw_cursor(buffer, font, ctx)
 }
 
 buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
@@ -248,7 +256,10 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 
 	line_start         := buffer.line_starts[buffer.cursor.line]
 	cursor_pos_clamped := min(buffer.cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
-	assert(line_start <= cursor_pos_clamped, "Line start index must be less or equal to clamped cursor position")
+	assert(
+		line_start <= cursor_pos_clamped,
+		"Line start index must be less or equal to clamped cursor position",
+	)
 
 	line_text := buffer.data[line_start:buffer.cursor.pos]
 	assert(len(line_text) >= 0, "Line text cannot be negative")
@@ -286,32 +297,32 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 
 // Draws only the visible lines.
 buffer_draw_visible_lines :: proc(
-    buffer: ^Buffer,
-    font: Font,
-    ctx: Draw_Context,
-	allocator := context.allocator
+	buffer: ^Buffer,
+	font: Font,
+	ctx: Draw_Context,
+	allocator := context.allocator,
 ) {
-    for line in ctx.first_line ..= ctx.last_line {
-        line_start := buffer.line_starts[line]
-        line_end   := len(buffer.data)
-        if line < len(buffer.line_starts) - 1 {
-            // Exclude newline.
-            line_end = buffer.line_starts[line + 1] - 1
-        }
-        // Convert the line slice to a C-string.
-        line_text := buffer.data[line_start:line_end]
-        line_str  := strings.clone_to_cstring(string(line_text), allocator)
+	for line in ctx.first_line ..= ctx.last_line {
+		line_start := buffer.line_starts[line]
+		line_end   := len(buffer.data)
+		if line < len(buffer.line_starts) - 1 {
+			// Exclude newline.
+			line_end = buffer.line_starts[line + 1] - 1
+		}
+		// Convert the line slice to a C-string.
+		line_text := buffer.data[line_start:line_end]
+		line_str  := strings.clone_to_cstring(string(line_text), allocator)
 
-        y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
-        rl.DrawTextEx(
-            font.ray_font,
-            line_str,
-            rl.Vector2{ ctx.position.x, y_pos },
-            f32(font.size),
-            font.spacing,
-            font.color,
-        )
-    }
+		y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+		rl.DrawTextEx(
+			font.ray_font,
+			line_str,
+			rl.Vector2{ctx.position.x, y_pos},
+			f32(font.size),
+			font.spacing,
+			font.color,
+		)
+	}
 }
 
 //
@@ -324,7 +335,7 @@ buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
 	start := buffer.line_starts[line]
 	end   := len(buffer.data)
 
-	if line < len(buffer.line_starts) - 1{
+	if line < len(buffer.line_starts) - 1 {
 		end = buffer.line_starts[line + 1]
 
 		// NOTE: Subtract 1 to exclude the newline character.
@@ -337,14 +348,14 @@ buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
 
 // Begin and end scissor mode using the draw context.
 buffer_draw_scissor_begin :: proc(ctx: Draw_Context) {
-    rl.BeginScissorMode(
-        i32(ctx.position.x),
-        i32(ctx.position.y),
-        ctx.screen_width,
-        ctx.screen_height,
-    )
+	rl.BeginScissorMode(
+		i32(ctx.position.x),
+		i32(ctx.position.y),
+		ctx.screen_width,
+		ctx.screen_height,
+	)
 }
 
 buffer_draw_scissor_end :: proc() {
-    rl.EndScissorMode()
+	rl.EndScissorMode()
 }
