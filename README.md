@@ -13,7 +13,7 @@ Pulse is a **simple**, **fast**, and **easy to use** text editor. Inspired by He
 2. **Build** the project:
    ```bash
    cd pulse
-   odin build .
+   make build
    ```
 3. **Run** the binary:
    ```bash
