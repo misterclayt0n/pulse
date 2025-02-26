@@ -3,9 +3,9 @@ package engine
 import rl "vendor:raylib"
 import "core:fmt"
 
-// 
+//
 // Globals
-// 
+//
 
 background_color :: rl.Color{28, 28, 28, 255}
 text_color :: rl.Color{235, 219, 178, 255}
@@ -16,8 +16,7 @@ Pulse :: struct {
 	buffer:         Buffer,      // NOTE: This is probably being removed for a window system.
 	font:           Font,
 	status_line:    Status_Line,
-	mode:           Vim_Mode,
-	command_buffer: Vim_State,
+	keymap:         Keymap,
 	camera:         rl.Camera2D,
 	target_x:       f32,
 	target_y:       f32,
@@ -26,46 +25,26 @@ Pulse :: struct {
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	buffer         := buffer_init(allocator)
 	font           := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
-	command_buffer := vim_state_init(allocator)
 	status_line    := status_line_init(font)
 	camera         := rl.Camera2D { offset = {0, 0}, target = {0, 0}, rotation = 0, zoom = 1 }
+	keymap         := keymap_init(.VIM, allocator) // Default to vim.
 
-	
 	return Pulse {
 		buffer         = buffer,
 		font           = font,
 		status_line    = status_line,
-		mode           = .NORMAL,
-		command_buffer = command_buffer,
 		camera         = camera,
 		target_x       = 0,
 		target_y       = 0,
+		keymap         = keymap,
 	}
 }
 
 pulse_update :: proc(p: ^Pulse) {
-	// TODO: Move this into a keybind module.
-	#partial switch p.mode {
-	case .NORMAL:
-		if rl.IsKeyPressed(.I) do change_mode(&p.buffer, &p.mode, .INSERT)
-		if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressedRepeat(.LEFT) || rl.IsKeyPressed(.H) || rl.IsKeyPressedRepeat(.H) do buffer_move_cursor(&p.buffer, .LEFT)
-		if rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressedRepeat(.RIGHT) || rl.IsKeyPressed(.L) || rl.IsKeyPressedRepeat(.L) do buffer_move_cursor(&p.buffer, .RIGHT)
-		if rl.IsKeyPressed(.UP) || rl.IsKeyPressedRepeat(.UP) || rl.IsKeyPressed(.K) || rl.IsKeyPressedRepeat(.K) do buffer_move_cursor(&p.buffer, .UP)
-		if rl.IsKeyPressed(.DOWN) || rl.IsKeyPressedRepeat(.DOWN) || rl.IsKeyPressed(.J) || rl.IsKeyPressedRepeat(.J) do buffer_move_cursor(&p.buffer, .DOWN)
-	case .INSERT:
-		if rl.IsKeyPressed(.ESCAPE) do change_mode(&p.buffer, &p.mode, .NORMAL) 
-		if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressedRepeat(.ENTER) do buffer_insert_char(&p.buffer, '\n')
-		if rl.IsKeyPressed(.BACKSPACE) || rl.IsKeyPressedRepeat(.BACKSPACE) do buffer_delete_char(&p.buffer)
-
-		key := rl.GetCharPressed()
-		for key != 0 {
-			buffer_insert_char(&p.buffer, rune(key))
-			key = rl.GetCharPressed()
-		} 
-	}
+	keymap_update(p)
 
 	// Update status line information.
-    p.status_line.mode        = fmt.tprintf("%v", p.mode)
+    p.status_line.mode        = fmt.tprintf("%v", p.keymap.vim_state.mode)
     p.status_line.line_number = p.buffer.cursor.line
     p.status_line.col_number  = p.buffer.cursor.col
 
@@ -92,9 +71,9 @@ pulse_scroll :: proc(p: ^Pulse) {
         p.target_y = cursor_world_y - (window_height - margin_y)
     }
     // NOTE: Clamp to prevent showing empty space beyond the document.
-    p.target_y = clamp(p.target_y, 0, max_target_y) 
+    p.target_y = clamp(p.target_y, 0, max_target_y)
 
-    // Horizontal scrolling logic. 
+    // Horizontal scrolling logic.
     line_start := p.buffer.line_starts[p.buffer.cursor.line]
     text_slice := p.buffer.data[line_start:p.buffer.cursor.pos]
     temp_len   := len(text_slice)
@@ -112,13 +91,13 @@ pulse_scroll :: proc(p: ^Pulse) {
 	margin_x       :: 50.0
 
     if cursor_x < viewport_left + margin_x {
-        p.target_x = cursor_x - margin_x 
+        p.target_x = cursor_x - margin_x
     }
     if cursor_x > viewport_right - margin_x {
-        p.target_x = cursor_x - (window_width - margin_x) 
+        p.target_x = cursor_x - (window_width - margin_x)
     }
 
-    // Lerp the camera's current position (p.camera.target) torwards the new 
+    // Lerp the camera's current position (p.camera.target) torwards the new
 	// target (p.target) for a smooth scrolling effect.
     p.camera.target.y = rl.Lerp(p.camera.target.y, p.target_y, scroll_smoothness)
     p.camera.target.x = rl.Lerp(p.camera.target.x, p.target_x, scroll_smoothness)

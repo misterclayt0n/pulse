@@ -17,12 +17,12 @@ Buffer :: struct {
 
 Cursor :: struct {
 	pos:   int,         // Position in the array of bytes.
-	sel:   int,         
-	line:  int,         
-	col:   int,         
+	sel:   int,
+	line:  int,
+	col:   int,
 	style: Cursor_Style,
-	color: rl.Color,    
-	blink: bool,        
+	color: rl.Color,
+	blink: bool,
 }
 
 Cursor_Style :: enum {
@@ -61,7 +61,7 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 			sel   = 0,
 			line  = 0,
 			col   = 0,
-			style = .BLOCK,
+			style = .UNDERSCORE,
 			color = rl.GRAY,
 			blink = false
 		},
@@ -91,7 +91,7 @@ buffer_load_file :: proc(buffer: ^Buffer, filename: string, allocator := context
 
 //
 // Editing
-// 
+//
 
 buffer_insert_text :: proc(buffer: ^Buffer, text: string) {
 	assert(len(text) != 0, "The length of the text should not be 0")
@@ -124,7 +124,7 @@ buffer_insert_char :: proc(buffer: ^Buffer, char: rune) {
 
 	// Encode rune into UTF-8.
 	encoded, n_bytes := utf8.encode_rune(char)
-	
+
 	// Make space for new character.
 	resize(&buffer.data, len(buffer.data) + n_bytes)
 
@@ -162,7 +162,7 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 	append(&buffer.line_starts, 0) // First line always start at 0.
 
 	for i := 0; i < len(buffer.data); i += 1 {
-		if buffer.data[i] == '\n' do append(&buffer.line_starts, i + 1) 
+		if buffer.data[i] == '\n' do append(&buffer.line_starts, i + 1)
 	}
 
 	// Update cursor line and col.
@@ -178,7 +178,7 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 
 //
 // Movement
-// 
+//
 
 buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	current_line_start := buffer.line_starts[buffer.cursor.line]
@@ -188,7 +188,7 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	if buffer.cursor.line < len(buffer.line_starts) - 1 {
 		current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
 	}
-	
+
 	switch movement {
 	case .LEFT:
 		if buffer.cursor.pos > current_line_start {
@@ -199,7 +199,7 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
 			buffer.cursor.pos += n_bytes
 		}
-	case .UP: 
+	case .UP:
 		if buffer.cursor.line > 0 {
 			// Get target col (preserved from the current position).
 			target_col := buffer.cursor.col
@@ -227,7 +227,7 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 
 //
 // Drawing
-// 
+//
 
 buffer_draw :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context, allocator := context.allocator) {
     buffer_draw_scissor_begin(ctx)
@@ -239,13 +239,13 @@ buffer_draw :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context, allocator :=
 
 buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 	cursor_pos := ctx.position
-	
-	// Adjust vertical position based on line number.	
+
+	// Adjust vertical position based on line number.
 	cursor_pos.y += f32(buffer.cursor.line) * (f32(font.size) + font.spacing)
-	
+
 	assert(buffer.cursor.pos >= 0, "Cursor position must be greater or equal to 0")
 	assert(len(buffer.data) >= 0, "Buffer size has to be greater or equal to 0")
-	
+
 	line_start         := buffer.line_starts[buffer.cursor.line]
 	cursor_pos_clamped := min(buffer.cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
 	assert(line_start <= cursor_pos_clamped, "Line start index must be less or equal to clamped cursor position")
@@ -314,9 +314,9 @@ buffer_draw_visible_lines :: proc(
     }
 }
 
-// 
+//
 // Helpers
-// 
+//
 
 // Returns the length of a specified line.
 buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
@@ -348,4 +348,3 @@ buffer_draw_scissor_begin :: proc(ctx: Draw_Context) {
 buffer_draw_scissor_end :: proc() {
     rl.EndScissorMode()
 }
-
