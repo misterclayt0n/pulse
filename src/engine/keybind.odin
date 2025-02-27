@@ -56,7 +56,7 @@ Vim_Mode :: enum {
 
 Vim_State :: struct {
 	commands:     [dynamic]u8, // Stores commands like "dd".
-	last_command: string,       // For repeating commands.
+	last_command: string,      // For repeating commands.
 	mode:         Vim_Mode,
 }
 
@@ -105,13 +105,20 @@ emacs_state_init :: proc(allocator := context.allocator) -> Emacs_State {
 emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(p.keymap.mode == .EMACS, "Keybind mode must be set to emacs in order to update it")
 
+	ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
+
+	// Emacs pinky.
+	if ctrl_pressed {
+		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .LEFT)
+		if press_and_repeat(.F) do buffer_move_cursor(&p.buffer, .RIGHT)
+		if press_and_repeat(.P) do buffer_move_cursor(&p.buffer, .UP)
+		if press_and_repeat(.N) do buffer_move_cursor(&p.buffer, .DOWN)
+	}
+
 	if press_and_repeat(.LEFT) do buffer_move_cursor(&p.buffer, .LEFT)
 	if press_and_repeat(.RIGHT) do buffer_move_cursor(&p.buffer, .RIGHT)
 	if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
 	if press_and_repeat(.DOWN) do buffer_move_cursor(&p.buffer, .DOWN)
-
-	if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
-	if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
 	if press_and_repeat(.ENTER) do buffer_insert_char(&p.buffer, '\n')
 	if press_and_repeat(.BACKSPACE) do buffer_delete_char(&p.buffer)
 
@@ -120,6 +127,8 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		buffer_insert_char(&p.buffer, rune(key))
 		key = rl.GetCharPressed()
 	}
+
+	if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 }
 
 //

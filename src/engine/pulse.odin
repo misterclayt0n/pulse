@@ -7,8 +7,8 @@ import rl "vendor:raylib"
 // Globals
 //
 
-background_color :: rl.Color{28, 28, 28, 255}
-text_color :: rl.Color{235, 219, 178, 255}
+background_color  :: rl.Color{28, 28, 28, 255}
+text_color        :: rl.Color{235, 219, 178, 255}
 scroll_smoothness :: 0.2
 
 // Main state of the editor,
