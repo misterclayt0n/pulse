@@ -16,13 +16,14 @@ Buffer :: struct {
 }
 
 Cursor :: struct {
-	pos:   int, // Position in the array of bytes.
-	sel:   int,
-	line:  int,
-	col:   int,
-	style: Cursor_Style,
-	color: rl.Color,
-	blink: bool,
+	pos:           int, // Position in the array of bytes.
+	sel:           int,
+	line:          int, // Current line number.
+	col:           int, // Current column (character index) in the line.
+	preferred_col: int, // Preferred column maintained across vertical movements.
+	style:         Cursor_Style,
+	color:         rl.Color,
+	blink:         bool,
 }
 
 Cursor_Style :: enum {
@@ -56,13 +57,14 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 		line_starts = make([dynamic]int, 1, 64, allocator),
 		dirty = false,
 		cursor = Cursor {
-			pos   = 0,
-			sel   = 0,
-			line  = 0,
-			col   = 0,
-			style = .BLOCK,
-			color = rl.GRAY,
-			blink = false, // FIX: This shit.
+			pos           = 0,
+			sel           = 0,
+			line          = 0,
+			col           = 0,
+			preferred_col = -1,
+			style         = .BLOCK,
+			color         = rl.GRAY,
+			blink         = false, // FIX: This shit.
 		},
 	}
 }
@@ -192,20 +194,26 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 		current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
 	}
 
+	horizontal: bool
+
 	switch movement {
 	case .LEFT:
 		if buffer.cursor.pos > current_line_start {
 			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
 		}
+		horizontal = true
 	case .RIGHT:
 		if buffer.cursor.pos < current_line_end {
 			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
 			buffer.cursor.pos += n_bytes
 		}
+		horizontal = true
 	case .UP:
 		if buffer.cursor.line > 0 {
 			// Get target col (preserved from the current position).
-			target_col := buffer.cursor.col
+			target_col := buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
+			assert(target_col >= 0, "Target column cannot be negative")
+
 			new_line := buffer.cursor.line - 1 // Move to prev line.
 
 			// Calculate new position.
@@ -216,9 +224,12 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	case .DOWN:
 		if buffer.cursor.line < len(buffer.line_starts) - 1 {
 			// Same stuff as before.
-			target_col := buffer.cursor.col
+			target_col := buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
+			assert(target_col >= 0, "Target column cannot be negative")
+
 			new_line := buffer.cursor.line + 1 // Move to next line.
 
+			// Calculate new position.
 			new_line_length := buffer_line_length(buffer, new_line)
 			new_col := min(target_col, new_line_length)
 			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
@@ -226,6 +237,11 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	}
 
 	buffer_update_line_starts(buffer)
+
+	// Update preferred col after horizontal movements.
+	if horizontal {
+		buffer.cursor.preferred_col = buffer.cursor.col
+	}
 }
 
 //
