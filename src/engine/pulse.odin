@@ -7,19 +7,20 @@ import rl "vendor:raylib"
 // Globals
 //
 
-background_color  :: rl.Color{28, 28, 28, 255}
-text_color        :: rl.Color{235, 219, 178, 255}
+background_color :: rl.Color{28, 28, 28, 255}
+text_color :: rl.Color{235, 219, 178, 255}
 scroll_smoothness :: 0.2
 
 // Main state of the editor,
 Pulse :: struct {
-	buffer:      Buffer,      // NOTE: This is probably being removed for a window system.
-	font:        Font,
-	status_line: Status_Line, 
-	keymap:      Keymap,
-	camera:      rl.Camera2D,
-	target_x:    f32,
-	target_y:    f32,
+	buffer:       Buffer,      // NOTE: This is probably being removed for a window system.
+	font:         Font,
+	status_line:  Status_Line,
+	keymap:       Keymap,
+	camera:       rl.Camera2D,
+	target_x:     f32,
+	target_y:     f32,
+	should_close: bool,
 }
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
@@ -32,42 +33,37 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 		rotation = 0,
 		zoom     = 1,
 	}
-	keymap := keymap_init(.VIM, allocator) // Default to vim.
+	keymap      := keymap_init(.VIM, allocator) // Default to vim.
 
 	return Pulse {
-		buffer = buffer,
-		font = font,
+		buffer      = buffer,
+		font        = font,
 		status_line = status_line,
-		camera = camera,
-		target_x = 0,
-		target_y = 0,
-		keymap = keymap,
+		camera      = camera,
+		target_x    = 0,
+		target_y    = 0,
+		keymap      = keymap,
 	}
 }
 
 pulse_update :: proc(p: ^Pulse) {
 	keymap_update(p)
-
-	// Update status line information.
-	p.status_line.mode        = fmt.tprintf("%v", p.keymap.vim_state.mode)
-	p.status_line.line_number = p.buffer.cursor.line
-	p.status_line.col_number  = p.buffer.cursor.col
-
+	status_line_update(p)
 	pulse_scroll(p)
 }
 
 // TODO: Mouse interaction.
 pulse_scroll :: proc(p: ^Pulse) {
-	// Vertical scrolling logic
+	// Vertical scrolling logic.
 	line_height     := f32(p.font.size) + p.font.spacing
-	cursor_world_y  := 10 + f32(p.buffer.cursor.line) * line_height // World Y of cursor
+	cursor_world_y  := 10 + f32(p.buffer.cursor.line) * line_height // World Y of cursor.
 	window_height   := f32(rl.GetScreenHeight())
 	margin_y        :: 100.0
 	line_count      := f32(len(p.buffer.line_starts))
 	document_height := 10 + line_count * line_height
 	max_target_y    := max(0, document_height - window_height)
 
-	// Calculate cursor position relative to current viewport
+	// Calculate cursor position relative to current viewport.
 	cursor_screen_y := cursor_world_y - p.camera.target.y
 
 	if cursor_screen_y < margin_y {
@@ -134,4 +130,3 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 
 	buffer_draw(&p.buffer, p.font, ctx)
 }
-

@@ -11,7 +11,6 @@ main :: proc() {
 	err := vmem.arena_init_growing(&arena)
 	assert(err == nil, "Could not init arena")
 	allocator := vmem.arena_allocator(&arena)
-	defer vmem.arena_destroy(&arena)
 
 	// Get filename from cli.
 	filename := ""
@@ -21,6 +20,9 @@ main :: proc() {
 	rl.SetConfigFlags({.WINDOW_RESIZABLE})
 	rl.InitWindow(1080, 920, "Pulse")
 	rl.SetWindowMonitor(0)
+
+	// NOTE: Destroy the arena first.
+	defer vmem.arena_destroy(&arena)
 	defer rl.CloseWindow()
 	
 	pulse := eg.pulse_init("fonts/IosevkaNerdFont-Regular.ttf", allocator)
@@ -34,12 +36,10 @@ main :: proc() {
 
 	rl.SetExitKey(.KEY_NULL) // So that ESC works fine.
 
-	for !rl.WindowShouldClose() {
+	for !rl.WindowShouldClose() && !pulse.should_close {
 		rl.BeginDrawing()
 		defer rl.EndDrawing()
-
 		eg.pulse_update(&pulse)
-		
 		eg.pulse_draw(&pulse, allocator)
 	}
 }
