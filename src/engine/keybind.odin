@@ -34,7 +34,6 @@ keymap_init :: proc(mode: Keymap_Mode, allocator := context.allocator) -> Keymap
 	return keymap
 }
 
-// Switch
 keymap_update :: proc(p: ^Pulse) {
 	switch p.keymap.mode {
 	case .VIM:
@@ -57,7 +56,6 @@ Vim_Mode :: enum {
 
 Vim_State :: struct {
 	commands:     [dynamic]u8, // Stores commands like "dd".
-	command_buf:  [dynamic]u8, // Commands in the cli.
 	last_command: string,      // For repeating commands.
 	mode:         Vim_Mode,
 }
@@ -100,23 +98,27 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			key = rl.GetCharPressed()
 		}
 	case .COMMAND:
-		using p.keymap.vim_state
+		using p.status_line
 		key := rl.GetCharPressed()	
 
 		if rl.IsKeyPressed(.ENTER) {
 			execute_command(p)
 			change_mode(p, .NORMAL)
+			clear(&p.status_line.command_buf.data)
+			p.status_line.command_buf.cursor.pos = 0
 		}
 
 		// TODO: It should enter the normal mode of command mode, instead of global normal mode
 		//       since the desired behavior is that the user can interact with the cli using full vim motions.
 		if rl.IsKeyPressed(.ESCAPE) do change_mode(p, .NORMAL)
-		if press_and_repeat(.BACKSPACE) {
-			if len(command_buf) > 0 do resize(&command_buf, len(command_buf) - 1) 
-		}
+
+		// Handle cursor movement.
+		if press_and_repeat(.LEFT) do buffer_move_cursor(&command_buf, .LEFT)
+		if press_and_repeat(.RIGHT) do buffer_move_cursor(&command_buf, .RIGHT)
+		if press_and_repeat(.BACKSPACE) do buffer_delete_char(&command_buf)
 
 		for key != 0 {
-			if is_char_supported(rune(key)) do append(&command_buf, u8(rune(key)))
+			if is_char_supported(rune(key)) do buffer_insert_char(&command_buf, rune(key))
 			key = rl.GetCharPressed()
 		}
 	}
@@ -166,16 +168,17 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 //
 
 execute_command :: proc(p: ^Pulse) {
-	cmd := strings.clone_from_bytes(p.keymap.vim_state.command_buf[:])
+	cmd := strings.clone_from_bytes(p.status_line.command_buf.data[:])
+	cmd  = strings.trim_space(cmd) // Remove leading/trailing whitespacs.
 	defer delete(cmd)
 
 	// Handle different commands.
 	switch cmd {
 	case "w": 
-		// TODO
+		// TODO.
 		fmt.println("Saving file")
 	case "q":
-		// TODO: This should probably close the buffer/window, not the entire editor probably
+		// TODO: This should probably close the buffer/window, not the entire editor probably.
 		p.should_close = true
 	case "wq":
 		fmt.println("Saving file")
@@ -207,7 +210,9 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 	case .COMMAND:
 		if mode == .NORMAL {
 			mode = .COMMAND
-			clear(&command_buf)
+			clear(&p.status_line.command_buf.data)
+			append(&p.status_line.command_buf.data, ' ')  // Add an initial space.
+			p.status_line.command_buf.cursor.pos = 0
 		}
 	}
 }

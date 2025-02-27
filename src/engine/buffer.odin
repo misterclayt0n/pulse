@@ -60,9 +60,9 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 			sel   = 0,
 			line  = 0,
 			col   = 0,
-			style = .UNDERSCORE,
+			style = .BLOCK,
 			color = rl.GRAY,
-			blink = false,
+			blink = false, // FIX: This shit.
 		},
 	}
 }
