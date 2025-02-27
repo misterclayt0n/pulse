@@ -27,7 +27,7 @@ keymap_init :: proc(mode: Keymap_Mode, allocator := context.allocator) -> Keymap
 	case .EMACS:
 		keymap = {
 			mode        = .VIM,
-			emacs_state = emacs_state_init(allocator)
+			emacs_state = emacs_state_init(allocator),
 		}
 	}
 
@@ -56,7 +56,7 @@ Vim_Mode :: enum {
 
 Vim_State :: struct {
 	commands:     [dynamic]u8, // Stores commands like "dd".
-	last_command: string,      // For repeating commands.
+	last_command: string, // For repeating commands.
 	mode:         Vim_Mode,
 }
 
@@ -83,7 +83,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(&p.buffer, .DOWN)
 		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 
-		
+
 		if shift_pressed {
 			if press_and_repeat(.SEMICOLON) do change_mode(p, .COMMAND)
 		}
@@ -99,7 +99,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 	case .COMMAND:
 		using p.status_line
-		key := rl.GetCharPressed()	
+		key := rl.GetCharPressed()
 
 		if rl.IsKeyPressed(.ENTER) {
 			execute_command(p)
@@ -131,7 +131,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 Emacs_State :: struct {}
 
 emacs_state_init :: proc(allocator := context.allocator) -> Emacs_State {
-	return Emacs_State {}
+	return Emacs_State{}
 }
 
 emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
@@ -169,12 +169,12 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 execute_command :: proc(p: ^Pulse) {
 	cmd := strings.clone_from_bytes(p.status_line.command_buf.data[:])
-	cmd  = strings.trim_space(cmd) // Remove leading/trailing whitespacs.
+	cmd = strings.trim_space(cmd) // Remove leading/trailing whitespacs.
 	defer delete(cmd)
 
 	// Handle different commands.
 	switch cmd {
-	case "w": 
+	case "w":
 		// TODO.
 		fmt.println("Saving file")
 	case "q":
@@ -183,7 +183,7 @@ execute_command :: proc(p: ^Pulse) {
 	case "wq":
 		fmt.println("Saving file")
 		p.should_close = true
-	case: 
+	case:
 		fmt.println("Unknown command: %s\n", cmd)
 	}
 }
@@ -211,7 +211,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		if mode == .NORMAL {
 			mode = .COMMAND
 			clear(&p.status_line.command_buf.data)
-			append(&p.status_line.command_buf.data, ' ')  // Add an initial space.
+			append(&p.status_line.command_buf.data, ' ') // Add an initial space.
 			p.status_line.command_buf.cursor.pos = 0
 		}
 	}
@@ -220,10 +220,10 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 change_keymap_mode :: proc(p: ^Pulse, allocator := context.allocator) {
 	switch p.keymap.mode {
 	case .VIM:
-		p.keymap.mode        = .EMACS
+		p.keymap.mode = .EMACS
 		p.keymap.emacs_state = emacs_state_init(allocator)
 	case .EMACS:
-		p.keymap.mode      = .VIM
+		p.keymap.mode = .VIM
 		p.keymap.vim_state = vim_state_init(allocator)
 	}
 }

@@ -13,7 +13,7 @@ scroll_smoothness :: 0.2
 
 // Main state of the editor,
 Pulse :: struct {
-	buffer:       Buffer,      // NOTE: This is probably being removed for a window system.
+	buffer:       Buffer, // NOTE: This is probably being removed for a window system.
 	font:         Font,
 	status_line:  Status_Line,
 	keymap:       Keymap,
@@ -24,25 +24,25 @@ Pulse :: struct {
 }
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
-	buffer      := buffer_init(allocator)
-	font        := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
+	buffer := buffer_init(allocator)
+	font := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
 	status_line := status_line_init(font)
-	camera      := rl.Camera2D {
+	camera := rl.Camera2D {
 		offset   = {0, 0},
 		target   = {0, 0},
 		rotation = 0,
 		zoom     = 1,
 	}
-	keymap      := keymap_init(.VIM, allocator) // Default to vim.
+	keymap := keymap_init(.VIM, allocator) // Default to vim.
 
 	return Pulse {
-		buffer      = buffer,
-		font        = font,
+		buffer = buffer,
+		font = font,
 		status_line = status_line,
-		camera      = camera,
-		target_x    = 0,
-		target_y    = 0,
-		keymap      = keymap,
+		camera = camera,
+		target_x = 0,
+		target_y = 0,
+		keymap = keymap,
 	}
 }
 
@@ -55,13 +55,13 @@ pulse_update :: proc(p: ^Pulse) {
 // TODO: Mouse interaction.
 pulse_scroll :: proc(p: ^Pulse) {
 	// Vertical scrolling logic.
-	line_height     := f32(p.font.size) + p.font.spacing
-	cursor_world_y  := 10 + f32(p.buffer.cursor.line) * line_height // World Y of cursor.
-	window_height   := f32(rl.GetScreenHeight())
-	margin_y        :: 100.0
-	line_count      := f32(len(p.buffer.line_starts))
+	line_height := f32(p.font.size) + p.font.spacing
+	cursor_world_y := 10 + f32(p.buffer.cursor.line) * line_height // World Y of cursor.
+	window_height := f32(rl.GetScreenHeight())
+	margin_y :: 100.0
+	line_count := f32(len(p.buffer.line_starts))
 	document_height := 10 + line_count * line_height
-	max_target_y    := max(0, document_height - window_height)
+	max_target_y := max(0, document_height - window_height)
 
 	// Calculate cursor position relative to current viewport.
 	cursor_screen_y := cursor_world_y - p.camera.target.y
@@ -77,19 +77,20 @@ pulse_scroll :: proc(p: ^Pulse) {
 	// Horizontal scrolling logic.
 	line_start := p.buffer.line_starts[p.buffer.cursor.line]
 	text_slice := p.buffer.data[line_start:p.buffer.cursor.pos]
-	temp_len   := len(text_slice)
-	temp       := make([]u8, temp_len + 1)
+	temp_len := len(text_slice)
+	temp := make([]u8, temp_len + 1)
 
 	defer delete(temp)
 	if temp_len > 0 do copy(temp, text_slice)
 	temp[temp_len] = 0
 
-	text_width     := rl.MeasureTextEx(p.font.ray_font, cstring(raw_data(temp)), f32(p.font.size), p.font.spacing).x
-	cursor_x       := f32(10) + text_width
-	window_width   := f32(rl.GetScreenWidth())
-	viewport_left  := p.camera.target.x
+	text_width :=
+		rl.MeasureTextEx(p.font.ray_font, cstring(raw_data(temp)), f32(p.font.size), p.font.spacing).x
+	cursor_x := f32(10) + text_width
+	window_width := f32(rl.GetScreenWidth())
+	viewport_left := p.camera.target.x
 	viewport_right := viewport_left + window_width
-	margin_x       :: 50.0
+	margin_x :: 50.0
 
 	if cursor_x < viewport_left + margin_x {
 		p.target_x = cursor_x - margin_x
@@ -105,15 +106,15 @@ pulse_scroll :: proc(p: ^Pulse) {
 }
 
 pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
-	screen_width  := rl.GetScreenWidth()
+	screen_width := rl.GetScreenWidth()
 	screen_height := rl.GetScreenHeight()
 	status_line_draw(&p.status_line, screen_width, screen_height)
-	line_height   := f32(p.font.size) + p.font.spacing
+	line_height := f32(p.font.size) + p.font.spacing
 
 	first_visible_line := int((p.camera.target.y - 10) / line_height)
-	last_visible_line  := int((p.camera.target.y + f32(screen_height) + 10) / line_height)
-	first_visible_line  = max(0, first_visible_line)
-	last_visible_line   = min(len(p.buffer.line_starts) - 1, last_visible_line)
+	last_visible_line := int((p.camera.target.y + f32(screen_height) + 10) / line_height)
+	first_visible_line = max(0, first_visible_line)
+	last_visible_line = min(len(p.buffer.line_starts) - 1, last_visible_line)
 
 	ctx := Draw_Context {
 		position      = rl.Vector2{10, 10},

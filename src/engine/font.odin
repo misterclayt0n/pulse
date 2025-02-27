@@ -1,32 +1,32 @@
 package engine
 
-import rl "vendor:raylib"
 import "core:strings"
 import "core:unicode/utf8"
+import rl "vendor:raylib"
 
 // This is mostly a wrapper around a couple of raylib internals, and to make it easy to work with.
 Font :: struct {
-	ray_font:  rl.Font, 
-	size:      i32,
-	spacing:   f32,
-	color:     rl.Color
+	ray_font: rl.Font,
+	size:     i32,
+	spacing:  f32,
+	color:    rl.Color,
 }
 
 Extra_Chars :: []rune{'ç'}
 
 // Returns a slice of runes for the ASCII range plus some extra runes.
 gen_ascii_plus :: proc() -> []rune {
-	ascii_start : rune = 32
-	ascii_end   : rune = 126
-	extra       : rune = 'ç' 
-	
+	ascii_start: rune = 32
+	ascii_end: rune = 126
+	extra: rune = 'ç'
+
 	// Total numbers of codepoints: ASCII count + 1 + extra character.
-	total      := (ascii_end - ascii_start + 1) + 1
+	total := (ascii_end - ascii_start + 1) + 1
 	codepoints := make([]rune, total)
-	idx        : int = 0
-	
+	idx: int = 0
+
 	// Append ASCII characters.
-	for cp in ascii_start..<ascii_end + 1 {
+	for cp in ascii_start ..< ascii_end + 1 {
 		codepoints[idx] = cp
 		idx += 1
 	}
@@ -40,20 +40,25 @@ gen_ascii_plus :: proc() -> []rune {
 	return codepoints
 }
 
-load_font_with_codepoints :: proc(file: string, size: i32, color: rl.Color, allocator := context.allocator) -> Font {
+load_font_with_codepoints :: proc(
+	file: string,
+	size: i32,
+	color: rl.Color,
+	allocator := context.allocator,
+) -> Font {
 	codepoints := gen_ascii_plus()
-	file, err  := strings.clone_to_cstring(file, allocator)
+	file, err := strings.clone_to_cstring(file, allocator)
 
 	// NOTE: If an allocation error occurs like this, just panic
 	assert(err == nil, "Allocation error")
 
 	font := Font {
 		ray_font = rl.LoadFontEx(file, size, &codepoints[0], i32(len(codepoints))),
-		size = size,
-		spacing = 2,
-		color = color,
+		size     = size,
+		spacing  = 2,
+		color    = color,
 	}
-	
+
 	return font
 }
 
@@ -97,4 +102,3 @@ next_rune_length :: proc(data: []u8, pos: int) -> int {
 	_, n_bytes := utf8.decode_rune(data[pos:])
 	return n_bytes
 }
-
