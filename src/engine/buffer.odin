@@ -165,6 +165,47 @@ buffer_delete_char :: proc(buffer: ^Buffer) {
 	buffer_update_line_starts(buffer)
 }
 
+buffer_delete_word :: proc(buffer: ^Buffer) {
+	if buffer.cursor.pos <= 0 do return
+
+	original_pos := buffer.cursor.pos
+	start_pos := original_pos
+
+	// Move to word start.
+	buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+
+	// Skip whitespace backwards.
+	for buffer.cursor.pos > 0 && is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
+		buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+	}
+
+	// Move through word character.
+	if buffer.cursor.pos > 0 {
+		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		is_word := is_word_character(current_rune)
+
+		for buffer.cursor.pos > 0 {
+			prev_pos := prev_rune_start(buffer.data[:], buffer.cursor.pos)
+			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+
+			if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word do break
+
+			buffer.cursor.pos = prev_pos
+		}
+	}
+
+	// Bytes do delete.
+	delete_start := buffer.cursor.pos
+	delete_size := original_pos - delete_start
+
+	// Actually delete something...
+	copy(buffer.data[delete_start:], buffer.data[original_pos:])
+	resize(&buffer.data, len(buffer.data) - delete_size)
+	buffer.cursor.pos = delete_start
+	buffer.dirty = true
+	buffer_update_line_starts(buffer)
+}
+
 // REFACTOR: This function takes quite a lot of cost
 buffer_update_line_starts :: proc(buffer: ^Buffer) {
 	// Clear existing line starts and add first line

@@ -77,6 +77,8 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 	#partial switch p.keymap.vim_state.mode {
 	case .NORMAL:
+		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+
 		// Mode changing.
 		if press_and_repeat(.I) do change_mode(p, .INSERT)
 		if press_and_repeat(.A) do append_right_motion(p)
@@ -88,14 +90,26 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.ZERO) do buffer_move_cursor(&p.buffer, .LINE_START)
 		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
 		if press_and_repeat(.W) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
-		if press_and_repeat(.I) {
-			buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK) 
-			change_mode(p, .INSERT)
+
+		if shift_pressed {
+			if press_and_repeat(.I) {
+				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK) 
+				change_mode(p, .INSERT)
+			} 
+
+			if press_and_repeat(.A) {
+				buffer_move_cursor(&p.buffer, .LINE_END) 
+				append_right_motion(p)
+			} 
 		}
 
-		if press_and_repeat(.A) {
-			buffer_move_cursor(&p.buffer, .LINE_END) 
-			append_right_motion(p)
+		if press_and_repeat(.I) {
+			if shift_pressed {
+				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK) 
+				change_mode(p, .INSERT)
+			} else {
+				change_mode(p, .INSERT)
+			}
 		}
 
 		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
@@ -110,9 +124,15 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if press_and_repeat(.FOUR) do buffer_move_cursor(&p.buffer, .LINE_END)
 		}
 	case .INSERT:
+		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
+		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
+
 		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
 		if press_and_repeat(.ENTER) do buffer_insert_char(&p.buffer, '\n')
-		if press_and_repeat(.BACKSPACE) do buffer_delete_char(&p.buffer)
+		if press_and_repeat(.BACKSPACE) {
+			if ctrl_pressed || alt_pressed do buffer_delete_word(&p.buffer)
+			else do buffer_delete_char(&p.buffer)
+		}
 
 		key := rl.GetCharPressed()
 		for key != 0 {
@@ -200,7 +220,11 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
 	if press_and_repeat(.DOWN) do buffer_move_cursor(&p.buffer, .DOWN)
 	if press_and_repeat(.ENTER) do buffer_insert_char(&p.buffer, '\n')
-	if press_and_repeat(.BACKSPACE) do buffer_delete_char(&p.buffer)
+
+	if press_and_repeat(.BACKSPACE) {
+		if ctrl_pressed || alt_pressed do buffer_delete_word(&p.buffer)
+		else do buffer_delete_char(&p.buffer)
+	}
 
 	key := rl.GetCharPressed()
 	for key != 0 {
