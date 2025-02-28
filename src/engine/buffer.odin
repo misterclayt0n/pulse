@@ -336,7 +336,9 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			// Calculate the position based on target col.
 			new_pos := buffer.line_starts[new_line] + new_col
 
-			if new_pos == new_line_end && new_col > 0 && new_line_end > buffer.line_starts[new_line] {
+			if new_pos == new_line_end &&
+			   new_col > 0 &&
+			   new_line_end > buffer.line_starts[new_line] {
 				new_pos = prev_rune_start(buffer.data[:], new_pos)
 			}
 
@@ -354,7 +356,7 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			// Calculate new position.
 			new_line_length := buffer_line_length(buffer, new_line)
 			new_col := min(target_col, new_line_length)
-			
+
 			// If we're at the last character, do not allow positioning after it unless 
 			// target_col is 0 (allowing positioning at start of empty lines).
 			new_line_end := len(buffer.data)
@@ -365,7 +367,9 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			new_pos := buffer.line_starts[new_line] + new_col
 
 			// Don't allow positioning after the last character.
-			if new_pos == new_line_end && new_col > 0 && new_line_end > buffer.line_starts[new_line] {
+			if new_pos == new_line_end &&
+			   new_col > 0 &&
+			   new_line_end > buffer.line_starts[new_line] {
 				// Back up one character.
 				new_pos = prev_rune_start(buffer.data[:], new_pos)
 			}

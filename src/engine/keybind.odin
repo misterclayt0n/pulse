@@ -76,7 +76,24 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 	#partial switch p.keymap.vim_state.mode {
 	case .NORMAL:
+		// Mode changing.
 		if press_and_repeat(.I) do change_mode(p, .INSERT)
+		if press_and_repeat(.A) {
+			// First, move the cursor one position to the right if possible.
+			current_line_end := len(p.buffer.data)
+			if p.buffer.cursor.line < len(p.buffer.line_starts) - 1 {
+				current_line_end = p.buffer.line_starts[p.buffer.cursor.line + 1] - 1
+			}
+
+			// Only move right if we're not already at the end of the line.
+			if p.buffer.cursor.pos < current_line_end {
+				n_bytes := next_rune_length(p.buffer.data[:], p.buffer.cursor.pos)
+				p.buffer.cursor.pos += n_bytes
+			}
+
+			change_mode(p, .INSERT)
+		}
+
 		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(&p.buffer, .LEFT)
 		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(&p.buffer, .RIGHT)
 		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(&p.buffer, .UP)
