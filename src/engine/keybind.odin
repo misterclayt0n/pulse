@@ -58,6 +58,7 @@ Vim_State :: struct {
 	commands:     [dynamic]u8, // Stores commands like "dd".
 	last_command: string, // For repeating commands.
 	mode:         Vim_Mode,
+	parent_mode:  Keymap_Mode,
 }
 
 vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
@@ -105,7 +106,12 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 
 		if shift_pressed {
-			if press_and_repeat(.SEMICOLON) do change_mode(p, .COMMAND)
+			// Enter command mode.
+			if press_and_repeat(.SEMICOLON) {
+				p.keymap.vim_state.parent_mode = .VIM
+				change_mode(p, .COMMAND)
+			}
+
 			if press_and_repeat(.FOUR) do buffer_move_cursor(&p.buffer, .LINE_END)
 		}
 	case .INSERT:
@@ -124,14 +130,12 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		if rl.IsKeyPressed(.ENTER) {
 			execute_command(p)
-			change_mode(p, .NORMAL)
-			clear(&p.status_line.command_buf.data)
-			p.status_line.command_buf.cursor.pos = 0
+			get_out_of_command_mode(p)
 		}
 
 		// TODO: It should enter the normal mode of command mode, instead of global normal mode
 		//       since the desired behavior is that the user can interact with the cli using full vim motions.
-		if rl.IsKeyPressed(.ESCAPE) do change_mode(p, .NORMAL)
+		if rl.IsKeyPressed(.ESCAPE) do get_out_of_command_mode(p)
 
 		// Handle cursor movement.
 		if press_and_repeat(.LEFT) do buffer_move_cursor(&command_buf, .LEFT)
@@ -176,6 +180,12 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	if alt_pressed {
 		if press_and_repeat(.F) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
 		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
+		if press_and_repeat(.X) {
+			// Enter command mode from emacs.
+			p.keymap.vim_state.parent_mode = .EMACS
+			p.keymap.mode = .VIM // Temporarily switch to vim mode.
+			change_mode(p, .COMMAND)
+		}
 	}
 
 	if press_and_repeat(.LEFT) do buffer_move_cursor(&p.buffer, .LEFT)
@@ -257,6 +267,18 @@ change_keymap_mode :: proc(p: ^Pulse, allocator := context.allocator) {
 		p.keymap.mode = .VIM
 		p.keymap.vim_state = vim_state_init(allocator)
 	}
+}
+ 
+get_out_of_command_mode :: proc(p: ^Pulse) {
+	assert(p.keymap.vim_state.mode == .COMMAND)
+
+	// Restore prev mode.
+	parent_mode := p.keymap.vim_state.parent_mode
+	p.keymap.mode = parent_mode
+	p.keymap.vim_state.mode = .NORMAL
+
+	clear(&p.status_line.command_buf.data)
+	p.status_line.command_buf.cursor.pos = 0
 }
 
 //
