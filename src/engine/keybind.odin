@@ -79,21 +79,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	case .NORMAL:
 		// Mode changing.
 		if press_and_repeat(.I) do change_mode(p, .INSERT)
-		if press_and_repeat(.A) {
-			// First, move the cursor one position to the right if possible.
-			current_line_end := len(p.buffer.data)
-			if p.buffer.cursor.line < len(p.buffer.line_starts) - 1 {
-				current_line_end = p.buffer.line_starts[p.buffer.cursor.line + 1] - 1
-			}
-
-			// Only move right if we're not already at the end of the line.
-			if p.buffer.cursor.pos < current_line_end {
-				n_bytes := next_rune_length(p.buffer.data[:], p.buffer.cursor.pos)
-				p.buffer.cursor.pos += n_bytes
-			}
-
-			change_mode(p, .INSERT)
-		}
+		if press_and_repeat(.A) do append_right_motion(p)
 
 		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(&p.buffer, .LEFT)
 		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(&p.buffer, .RIGHT)
@@ -102,6 +88,15 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.ZERO) do buffer_move_cursor(&p.buffer, .LINE_START)
 		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
 		if press_and_repeat(.W) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
+		if press_and_repeat(.I) {
+			buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK) 
+			change_mode(p, .INSERT)
+		}
+
+		if press_and_repeat(.A) {
+			buffer_move_cursor(&p.buffer, .LINE_END) 
+			append_right_motion(p)
+		}
 
 		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 
@@ -279,6 +274,21 @@ get_out_of_command_mode :: proc(p: ^Pulse) {
 
 	clear(&p.status_line.command_buf.data)
 	p.status_line.command_buf.cursor.pos = 0
+}
+
+append_right_motion :: proc(p: ^Pulse) {
+	current_line_end := len(p.buffer.data)
+	if p.buffer.cursor.line < len(p.buffer.line_starts) - 1 {
+		current_line_end = p.buffer.line_starts[p.buffer.cursor.line + 1] - 1
+	}
+
+	// Only move right if we're not already at the end of the line.
+	if p.buffer.cursor.pos < current_line_end {
+		n_bytes := next_rune_length(p.buffer.data[:], p.buffer.cursor.pos)
+		p.buffer.cursor.pos += n_bytes
+	}
+
+	change_mode(p, .INSERT)
 }
 
 //

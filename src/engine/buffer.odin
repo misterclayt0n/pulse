@@ -41,6 +41,7 @@ Cursor_Movement :: enum {
 	LINE_END,
 	WORD_LEFT,
 	WORD_RIGHT,
+	FIRST_NON_BLANK,
 	// TODO: A lot more
 }
 
@@ -201,7 +202,7 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 
 	horizontal: bool
 
-	#partial switch movement {
+	switch movement {
 
 	// 
 	// Horizontal movement
@@ -226,6 +227,24 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 		horizontal = true
 	case .LINE_START:
 		buffer.cursor.pos = buffer.line_starts[buffer.cursor.line]
+		horizontal = true
+
+	case .FIRST_NON_BLANK:
+		current_line_start := buffer.line_starts[buffer.cursor.line]
+		current_line_end := len(buffer.data)
+		if buffer.cursor.line < len(buffer.line_starts) - 1 {
+			current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+		}
+
+		pos := current_line_start
+		// Skip whitespace characters.
+		for pos < current_line_end && is_whitespace_byte(buffer.data[pos]) {
+			pos += 1
+		}
+
+		// If all whitespace or empty line, start at start.
+		if pos == current_line_end do pos = current_line_start
+		buffer.cursor.pos = pos
 		horizontal = true
 	case .LINE_END:
 		current_line := buffer.cursor.line
