@@ -108,6 +108,11 @@ pulse_scroll :: proc(p: ^Pulse) {
 pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	screen_width := rl.GetScreenWidth()
 	screen_height := rl.GetScreenHeight()
+
+	status_line := &p.status_line
+	status_font := status_line.font
+	status_line_height := status_font.size + i32(status_font.spacing) + i32(status_line.padding) * 2
+
 	status_line_draw(&p.status_line, screen_width, screen_height)
 	line_height := f32(p.font.size) + p.font.spacing
 
@@ -119,7 +124,7 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	ctx := Draw_Context {
 		position      = rl.Vector2{10, 10},
 		screen_width  = screen_width,
-		screen_height = screen_height,
+		screen_height = screen_height - status_line_height,
 		first_line    = first_visible_line,
 		last_line     = last_visible_line,
 		line_height   = int(line_height),

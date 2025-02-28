@@ -46,12 +46,13 @@ status_line_update :: proc(p: ^Pulse) {
 status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	// Draw background.
 	line_height := s.font.size + i32(s.font.spacing)
+	status_height := line_height + i32(s.padding) // Total height considering padding.
 
 	bg_rect := rl.Rectangle {
 		x      = 0,
-		y      = f32(screen_height) - f32(line_height) - s.padding,
+		y      = f32(screen_height) - f32(status_height),
 		width  = f32(screen_width),
-		height = f32(screen_height),
+		height = f32(status_height),
 	}
 	rl.DrawRectangleRec(bg_rect, s.bg_color)
 
