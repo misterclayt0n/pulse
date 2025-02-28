@@ -248,19 +248,25 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 		horizontal = true
 	case .LINE_END:
 		current_line := buffer.cursor.line
-		if current_line < len(buffer.line_starts) - 1 {
-			// Get position before newline if line ends with one.
-			line_end_pos := buffer.line_starts[current_line + 1] - 1
-			if line_end_pos > 0 && buffer.data[line_end_pos] == '\n' {
-				buffer.cursor.pos = line_end_pos - 1
-			} else {
-				buffer.cursor.pos = line_end_pos
-			}
-		} else {
-			// Handle last line (no trailing newline).
-			buffer.cursor.pos = len(buffer.data)
-		}
+		current_line_start := buffer.line_starts[current_line]
+		current_line_length := buffer_line_length(buffer, current_line)
 
+		// Handle empty lines differently
+		if current_line_length == 0 {
+			buffer.cursor.pos = current_line_start
+		} else {
+			if current_line < len(buffer.line_starts) - 1 {
+				line_end_pos := buffer.line_starts[current_line + 1] - 1
+				// Only adjust if we have a newline character
+				if line_end_pos >= 0 && buffer.data[line_end_pos] == '\n' {
+					buffer.cursor.pos = line_end_pos - 1
+				} else {
+					buffer.cursor.pos = line_end_pos
+				}
+			} else {
+				buffer.cursor.pos = len(buffer.data)
+			}
+		}
 		horizontal = true
 	case .WORD_LEFT:
 		if buffer.cursor.pos <= 0 do break
