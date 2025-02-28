@@ -81,11 +81,15 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(&p.buffer, .RIGHT)
 		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(&p.buffer, .UP)
 		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(&p.buffer, .DOWN)
-		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
+		if press_and_repeat(.ZERO) do buffer_move_cursor(&p.buffer, .LINE_START)
+		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
+		if press_and_repeat(.W) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
 
+		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 
 		if shift_pressed {
 			if press_and_repeat(.SEMICOLON) do change_mode(p, .COMMAND)
+			if press_and_repeat(.FOUR) do buffer_move_cursor(&p.buffer, .LINE_END)
 		}
 	case .INSERT:
 		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
@@ -128,6 +132,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 // Emacs
 //
 
+// TODO: Add something similar to command mode in here.
 Emacs_State :: struct {}
 
 emacs_state_init :: proc(allocator := context.allocator) -> Emacs_State {
@@ -138,6 +143,7 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(p.keymap.mode == .EMACS, "Keybind mode must be set to emacs in order to update it")
 
 	ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
+	alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
 	// Emacs pinky.
 	if ctrl_pressed {
@@ -145,6 +151,14 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.F) do buffer_move_cursor(&p.buffer, .RIGHT)
 		if press_and_repeat(.P) do buffer_move_cursor(&p.buffer, .UP)
 		if press_and_repeat(.N) do buffer_move_cursor(&p.buffer, .DOWN)
+		if press_and_repeat(.E) do buffer_move_cursor(&p.buffer, .LINE_END)
+		if press_and_repeat(.A) do buffer_move_cursor(&p.buffer, .LINE_START)
+	}
+
+	// How do people live like this man...
+	if alt_pressed {
+		if press_and_repeat(.F) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
+		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
 	}
 
 	if press_and_repeat(.LEFT) do buffer_move_cursor(&p.buffer, .LEFT)

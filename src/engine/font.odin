@@ -2,6 +2,7 @@ package engine
 
 import "core:strings"
 import "core:unicode/utf8"
+import "core:unicode"
 import rl "vendor:raylib"
 
 // This is mostly a wrapper around a couple of raylib internals, and to make it easy to work with.
@@ -101,4 +102,12 @@ next_rune_length :: proc(data: []u8, pos: int) -> int {
 
 	_, n_bytes := utf8.decode_rune(data[pos:])
 	return n_bytes
+}
+
+is_whitespace_byte :: proc(b: u8) -> bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+is_word_character :: proc(r: rune) -> bool {
+    return unicode.is_alpha(r) || unicode.is_digit(r) || r == '_'
 }

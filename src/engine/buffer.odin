@@ -37,6 +37,10 @@ Cursor_Movement :: enum {
 	RIGHT,
 	UP,
 	DOWN,
+	LINE_START,
+	LINE_END,
+	WORD_LEFT,
+	WORD_RIGHT,
 	// TODO: A lot more
 }
 
@@ -185,6 +189,7 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 // Movement
 //
 
+// NOTE: This function will probably stay being this megazord forever, and I don't care.
 buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	current_line_start := buffer.line_starts[buffer.cursor.line]
 	current_line_end := len(buffer.data)
@@ -196,22 +201,124 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 
 	horizontal: bool
 
-	switch movement {
+	#partial switch movement {
+
+	// 
+	// Horizontal movement
+	// 
+
 	case .LEFT:
 		if buffer.cursor.pos > current_line_start {
 			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
 		}
 		horizontal = true
 	case .RIGHT:
+		// Only move right if we're not already at the last character.
 		if buffer.cursor.pos < current_line_end {
-			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
-			buffer.cursor.pos += n_bytes
+			// Don't allow moving from last character to end-of-line position.
+			if buffer.cursor.pos + 1 == current_line_end {
+				// We're at the last character already, don't move.
+			} else {
+				n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+				buffer.cursor.pos += n_bytes
+			}
 		}
 		horizontal = true
+	case .LINE_START:
+		buffer.cursor.pos = buffer.line_starts[buffer.cursor.line]
+		horizontal = true
+	case .LINE_END:
+		current_line := buffer.cursor.line
+		if current_line < len(buffer.line_starts) - 1 {
+			// Get position before newline if line ends with one.
+			line_end_pos := buffer.line_starts[current_line + 1] - 1
+			if line_end_pos > 0 && buffer.data[line_end_pos] == '\n' {
+				buffer.cursor.pos = line_end_pos - 1
+			} else {
+				buffer.cursor.pos = line_end_pos
+			}
+		} else {
+			// Handle last line (no trailing newline).
+			buffer.cursor.pos = len(buffer.data)
+		}
+
+		horizontal = true
+	case .WORD_LEFT:
+		if buffer.cursor.pos <= 0 do break
+
+		// Move to previous rune start
+		buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+
+		// Skip whitespace backwards
+		for buffer.cursor.pos > 0 && is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
+			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		}
+
+		if buffer.cursor.pos <= 0 do break
+
+		// Determine current character type
+		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		is_word := is_word_character(current_rune)
+
+		// Move backward through same-type characters
+		for buffer.cursor.pos > 0 {
+			prev_pos := prev_rune_start(buffer.data[:], buffer.cursor.pos)
+			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+
+			if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word {
+				break
+			}
+			buffer.cursor.pos = prev_pos
+		}
+
+		horizontal = true
+
+	case .WORD_RIGHT:
+		if buffer.cursor.pos >= len(buffer.data) do return
+		original_pos := buffer.cursor.pos
+
+		// Skip leading whitespace.
+		for buffer.cursor.pos < len(buffer.data) && is_whitespace_byte(buffer.data[buffer.cursor.pos]) do buffer.cursor.pos += 1
+
+		if buffer.cursor.pos >= len(buffer.data) do break
+
+		// Determine current character type.
+		current_rune, bytes_read := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		if bytes_read == 0 do break
+		is_word := is_word_character(current_rune)
+
+		// Move through same-type characters.
+		for buffer.cursor.pos <= len(buffer.data) {
+			// See if we've hit a boundary.
+			r, n := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+			if n == 0 || is_whitespace_byte(buffer.data[buffer.cursor.pos]) || is_word_character(r) != is_word do break
+
+			buffer.cursor.pos += n
+		}
+
+		// Skip trailing whitespace.
+		for buffer.cursor.pos < len(buffer.data) &&
+		    is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
+			buffer.cursor.pos += 1
+		}
+
+		// Ensure minimal movement.
+		if buffer.cursor.pos == original_pos && buffer.cursor.pos < len(buffer.data) {
+			// Move at least one character for single-character words.
+			buffer.cursor.pos += 1
+		}
+
+		horizontal = true
+
+	// 
+	// Vertical movement
+	// 
+
 	case .UP:
 		if buffer.cursor.line > 0 {
 			// Get target col (preserved from the current position).
-			target_col := buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
+			target_col :=
+				buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
 			assert(target_col >= 0, "Target column cannot be negative")
 
 			new_line := buffer.cursor.line - 1 // Move to prev line.
@@ -219,12 +326,27 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			// Calculate new position.
 			new_line_length := buffer_line_length(buffer, new_line)
 			new_col := min(target_col, new_line_length)
-			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
+
+			// Calculate the line end.
+			new_line_end := len(buffer.data)
+			if new_line < len(buffer.line_starts) - 1 {
+				new_line_end = buffer.line_starts[new_line + 1] - 1
+			}
+
+			// Calculate the position based on target col.
+			new_pos := buffer.line_starts[new_line] + new_col
+
+			if new_pos == new_line_end && new_col > 0 && new_line_end > buffer.line_starts[new_line] {
+				new_pos = prev_rune_start(buffer.data[:], new_pos)
+			}
+
+			buffer.cursor.pos = new_pos
 		}
 	case .DOWN:
 		if buffer.cursor.line < len(buffer.line_starts) - 1 {
 			// Same stuff as before.
-			target_col := buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
+			target_col :=
+				buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
 			assert(target_col >= 0, "Target column cannot be negative")
 
 			new_line := buffer.cursor.line + 1 // Move to next line.
@@ -232,7 +354,23 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			// Calculate new position.
 			new_line_length := buffer_line_length(buffer, new_line)
 			new_col := min(target_col, new_line_length)
-			buffer.cursor.pos = buffer.line_starts[new_line] + new_col
+			
+			// If we're at the last character, do not allow positioning after it unless 
+			// target_col is 0 (allowing positioning at start of empty lines).
+			new_line_end := len(buffer.data)
+			if new_line < len(buffer.line_starts) - 1 {
+				new_line_end = buffer.line_starts[new_line + 1] - 1
+			}
+
+			new_pos := buffer.line_starts[new_line] + new_col
+
+			// Don't allow positioning after the last character.
+			if new_pos == new_line_end && new_col > 0 && new_line_end > buffer.line_starts[new_line] {
+				// Back up one character.
+				new_pos = prev_rune_start(buffer.data[:], new_pos)
+			}
+
+			buffer.cursor.pos = new_pos
 		}
 	}
 
