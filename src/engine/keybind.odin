@@ -167,7 +167,19 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.F) do buffer_move_cursor(&p.buffer, .RIGHT)
 		if press_and_repeat(.P) do buffer_move_cursor(&p.buffer, .UP)
 		if press_and_repeat(.N) do buffer_move_cursor(&p.buffer, .DOWN)
-		if press_and_repeat(.E) do buffer_move_cursor(&p.buffer, .LINE_END)
+		if press_and_repeat(.E) {
+			buffer_move_cursor(&p.buffer, .LINE_END)
+			current_line_end := len(p.buffer.data)
+			if p.buffer.cursor.line < len(p.buffer.line_starts) - 1 {
+				current_line_end = p.buffer.line_starts[p.buffer.cursor.line + 1] - 1
+			}
+
+			// Only move right if we're not already at the end of the line.
+			if p.buffer.cursor.pos < current_line_end {
+				n_bytes := next_rune_length(p.buffer.data[:], p.buffer.cursor.pos)
+				p.buffer.cursor.pos += n_bytes
+			}
+		} 
 		if press_and_repeat(.A) do buffer_move_cursor(&p.buffer, .LINE_START)
 	}
 
