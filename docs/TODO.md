@@ -28,6 +28,8 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [ ] Macros?
 - [ ] Clipboard interaction.
 - [ ] Undo/Redo.
+- [ ] Search.
+- [ ] Substitute (probably like Emacs as well).
 
 ### Windows
 I'm not so clear as well as how the window management on this editor will look like.
