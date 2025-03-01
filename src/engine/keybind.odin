@@ -94,25 +94,27 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		if shift_pressed {
 			if press_and_repeat(.I) {
-				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK) 
+				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK)
 				change_mode(p, .INSERT)
-			} 
+			}
 
 			if press_and_repeat(.A) {
-				buffer_move_cursor(&p.buffer, .LINE_END) 
+				buffer_move_cursor(&p.buffer, .LINE_END)
 				append_right_motion(p)
-			} 
+			}
 
 			if press_and_repeat(.D) do buffer_delete_to_line_end(&p.buffer)
 			if press_and_repeat(.C) {
 				buffer_delete_to_line_end(&p.buffer)
 				change_mode(p, .INSERT)
 			}
+
+			if press_and_repeat(.MINUS) do buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK)
 		}
 
 		if press_and_repeat(.I) {
 			if shift_pressed {
-				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK) 
+				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK)
 				change_mode(p, .INSERT)
 			} else {
 				change_mode(p, .INSERT)
@@ -206,7 +208,7 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 				n_bytes := next_rune_length(p.buffer.data[:], p.buffer.cursor.pos)
 				p.buffer.cursor.pos += n_bytes
 			}
-		} 
+		}
 		if press_and_repeat(.A) do buffer_move_cursor(&p.buffer, .LINE_START)
 		if press_and_repeat(.K) do buffer_delete_to_line_end(&p.buffer)
 	}
@@ -243,7 +245,7 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 }
 
-// 
+//
 // Command handling
 //
 
@@ -307,7 +309,7 @@ change_keymap_mode :: proc(p: ^Pulse, allocator := context.allocator) {
 		p.keymap.vim_state = vim_state_init(allocator)
 	}
 }
- 
+
 get_out_of_command_mode :: proc(p: ^Pulse) {
 	assert(p.keymap.vim_state.mode == .COMMAND)
 
