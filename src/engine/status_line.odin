@@ -4,19 +4,21 @@ import "core:fmt"
 import rl "vendor:raylib"
 
 Status_Line :: struct {
-	text_color:  rl.Color,
-	bg_color:    rl.Color,
-	mode:        string,
-	filename:    string,
-	line_number: int,
-	col_number:  int,
-	font:        Font,
-	padding:     f32,
-	command_buf: Buffer,
+	text_color:        rl.Color,
+	bg_color:          rl.Color,
+	mode:              string,
+	filename:          string,
+	line_number:       int,
+	col_number:        int,
+	font:              Font,
+	padding:           f32,
+	command_buf:       Buffer,
+	command_indicator: string,
 }
 
 status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_Line {
 	buffer := buffer_init(allocator)
+	buffer.is_cli = true
 
 	return Status_Line {
 		text_color = rl.WHITE,
@@ -26,6 +28,7 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 		font = font,
 		padding = 10,
 		command_buf = buffer,
+		command_indicator = ""
 	}
 }
 
@@ -61,7 +64,7 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	command_text := string(s.command_buf.data[:])
 
 	if s.mode == "COMMAND" {
-		status_text = fmt.tprintf(":%s", command_text)
+		status_text = fmt.tprintf("%s%s", s.command_indicator, command_text)
 	} else {
 		status_text = fmt.tprintf(
 			"%s | %s | %d:%d",
@@ -85,22 +88,22 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 
 	// Draw command cursor.
 	if s.mode == "COMMAND" {
-		// Include colon in cursor measurement.
-		cursor_text := fmt.tprintf(":%.*s", s.command_buf.cursor.pos, s.command_buf.data)
-		text_width :=
-			rl.MeasureTextEx(s.font.ray_font, cstring(raw_data(cursor_text)), f32(s.font.size), s.font.spacing).x
+		// Measure command indicator width.
+		indicator_width := rl.MeasureTextEx(
+			s.font.ray_font,
+			cstring(raw_data(s.command_indicator)),
+			f32(s.font.size),
+			s.font.spacing
+		).x
 
 		// Create temporary draw context for cursor.
 		ctx := Draw_Context {
-			position      = {s.padding, text_pos.y},
+			position      = {s.padding + indicator_width, text_pos.y},
 			screen_width  = screen_width,
 			screen_height = screen_height,
 			line_height   = int(line_height),
 		}
 
-		// Adjust cursor position for colon.
-		s.command_buf.cursor.pos += 1 // Account for colon.
 		buffer_draw_cursor(&s.command_buf, s.font, ctx)
-		s.command_buf.cursor.pos -= 1 // Reset position.
 	}
 }

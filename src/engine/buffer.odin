@@ -13,6 +13,7 @@ Buffer :: struct {
 	line_starts: [dynamic]int, // Indexes of the beginning of each line in the array byte.
 	dirty:       bool, // If the buffer has been modified.
 	cursor:      Cursor,
+	is_cli:      bool,
 }
 
 Cursor :: struct {
@@ -166,6 +167,20 @@ buffer_delete_char :: proc(buffer: ^Buffer) {
 	buffer_update_line_starts(buffer)
 }
 
+buffer_delete_forward_char :: proc(buffer: ^Buffer) {
+	if buffer.cursor.pos >= len(buffer.data) do return
+
+	n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+	if n_bytes == 0 do return
+
+	// Delete the rune's bytes by shifting data to the left like a real chad.
+	copy(buffer.data[buffer.cursor.pos:], buffer.data[buffer.cursor.pos + n_bytes:])
+	resize(&buffer.data, len(buffer.data) - n_bytes)
+
+	buffer.dirty = true
+	buffer_update_line_starts(buffer)
+}
+
 buffer_delete_word :: proc(buffer: ^Buffer) {
 	if buffer.cursor.pos <= 0 do return
 
@@ -286,12 +301,18 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	case .RIGHT:
 		// Only move right if we're not already at the last character.
 		if buffer.cursor.pos < current_line_end {
-			// Don't allow moving from last character to end-of-line position.
-			if buffer.cursor.pos + 1 == current_line_end {
-				// We're at the last character already, don't move.
-			} else {
+			// Special handling for CLI buffers.
+			if buffer.is_cli {
 				n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
 				buffer.cursor.pos += n_bytes
+			} else {
+				// Don't allow moving from last character to end-of-line position.
+				if buffer.cursor.pos + 1 == current_line_end {
+					// We're at the last character already, don't move.
+				} else {
+					n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+					buffer.cursor.pos += n_bytes
+				}
 			}
 		}
 		horizontal = true
@@ -320,6 +341,13 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 		current_line := buffer.cursor.line
 		current_line_start := buffer.line_starts[current_line]
 		current_line_length := buffer_line_length(buffer, current_line)
+
+		// Handle CLI buffers differently.
+		if buffer.is_cli {
+			buffer.cursor.pos = len(buffer.data)
+			horizontal = true
+			break
+		}
 
 		// Handle empty lines differently
 		if current_line_length == 0 {
@@ -564,7 +592,7 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 		"Line start index must be less or equal to clamped cursor position",
 	)
 
-	line_text := buffer.data[line_start:buffer.cursor.pos]
+	line_text := buffer.data[line_start:cursor_pos_clamped]
 	assert(len(line_text) >= 0, "Line text cannot be negative")
 
 	temp_text := make([dynamic]u8, len(line_text) + 1)
