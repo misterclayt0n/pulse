@@ -63,7 +63,7 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	status_text: string
 	command_text := string(s.command_buf.data[:])
 
-	if s.mode == "COMMAND" {
+	if s.mode == "COMMAND" || s.mode == "COMMAND_NORMAL" {
 		status_text = fmt.tprintf("%s%s", s.command_indicator, command_text)
 	} else {
 		status_text = fmt.tprintf(
@@ -87,7 +87,7 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	)
 
 	// Draw command cursor.
-	if s.mode == "COMMAND" {
+	if s.mode == "COMMAND" || s.mode == "COMMAND_NORMAL" {
 		// Measure command indicator width.
 		indicator_width := rl.MeasureTextEx(
 			s.font.ray_font,

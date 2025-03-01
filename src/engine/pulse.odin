@@ -25,7 +25,7 @@ Pulse :: struct {
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	buffer := buffer_init(allocator)
-	font := load_font_with_codepoints(font_path, 35, text_color, allocator) // Default font
+	font := load_font_with_codepoints(font_path, 25, text_color, allocator) // Default font
 	status_line := status_line_init(font)
 	camera := rl.Camera2D {
 		offset   = {0, 0},

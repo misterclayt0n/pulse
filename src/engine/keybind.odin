@@ -52,6 +52,7 @@ Vim_Mode :: enum {
 	INSERT,
 	VISUAL,
 	COMMAND,
+	COMMAND_NORMAL,
 }
 
 Vim_State :: struct {
@@ -121,6 +122,14 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			}
 
 			if press_and_repeat(.MINUS) do buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK)
+
+			// Enter command mode.
+			if press_and_repeat(.SEMICOLON) {
+				p.keymap.vim_state.parent_mode = .VIM
+				change_mode(p, .COMMAND)
+			}
+
+			if press_and_repeat(.FOUR) do buffer_move_cursor(&p.buffer, .LINE_END)
 		}
 
 		if press_and_repeat(.I) {
@@ -134,15 +143,6 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		if press_and_repeat(.F2) do change_keymap_mode(p, allocator)
 
-		if shift_pressed {
-			// Enter command mode.
-			if press_and_repeat(.SEMICOLON) {
-				p.keymap.vim_state.parent_mode = .VIM
-				change_mode(p, .COMMAND)
-			}
-
-			if press_and_repeat(.FOUR) do buffer_move_cursor(&p.buffer, .LINE_END)
-		}
 	case .INSERT:
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
@@ -180,9 +180,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
-		// TODO: It should enter the normal mode of command mode, instead of global normal mode
-		//       since the desired behavior is that the user can interact with the cli using full vim motions.
-		if rl.IsKeyPressed(.ESCAPE) do get_out_of_command_mode(p)
+		if rl.IsKeyPressed(.ESCAPE) {
+			if p.keymap.vim_state.parent_mode == .VIM do change_mode(p, .COMMAND_NORMAL)
+			else do get_out_of_command_mode(p)
+		}
 
 		// Handle cursor movement.
 		if press_and_repeat(.LEFT) do buffer_move_cursor(&command_buf, .LEFT)
@@ -196,26 +197,81 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		// command mode or just press esc and go for the normal mode of command mode.
 		if ctrl_pressed {
 			if press_and_repeat(.B) do buffer_move_cursor(&command_buf, .LEFT)
-    		if press_and_repeat(.F) do buffer_move_cursor(&command_buf, .RIGHT)
-    		if press_and_repeat(.E) do buffer_move_cursor(&command_buf, .LINE_END)
+			if press_and_repeat(.F) do buffer_move_cursor(&command_buf, .RIGHT)
+			if press_and_repeat(.E) do buffer_move_cursor(&command_buf, .LINE_END)
 			if press_and_repeat(.A) do buffer_move_cursor(&command_buf, .LINE_START)
 			if press_and_repeat(.K) do buffer_delete_to_line_end(&command_buf)
 		}
 
 		if alt_pressed {
-            if press_and_repeat(.F) do buffer_move_cursor(&command_buf, .WORD_RIGHT)
-    		if press_and_repeat(.B) do buffer_move_cursor(&command_buf, .WORD_LEFT)
+			if press_and_repeat(.F) do buffer_move_cursor(&command_buf, .WORD_RIGHT)
+			if press_and_repeat(.B) do buffer_move_cursor(&command_buf, .WORD_LEFT)
 		}
 
 		if press_and_repeat(.BACKSPACE) {
-    		if ctrl_pressed || alt_pressed do buffer_delete_word(&command_buf)
-    		else do buffer_delete_char(&command_buf)
-    	}
-
+			if ctrl_pressed || alt_pressed do buffer_delete_word(&command_buf)
+			else do buffer_delete_char(&command_buf)
+		}
 
 		for key != 0 {
 			if is_char_supported(rune(key)) do buffer_insert_char(&command_buf, rune(key))
 			key = rl.GetCharPressed()
+		}
+	case .COMMAND_NORMAL:
+		using p.status_line
+
+		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+
+		if press_and_repeat(.ESCAPE) {
+			get_out_of_command_mode(p)
+		}
+
+		// Movement commands for command buffer.
+		if press_and_repeat(.H) || press_and_repeat(.LEFT) do buffer_move_cursor(&command_buf, .LEFT)
+		if press_and_repeat(.L) || press_and_repeat(.RIGHT) do buffer_move_cursor(&command_buf, .RIGHT)
+		if press_and_repeat(.B) do buffer_move_cursor(&command_buf, .WORD_LEFT)
+		if press_and_repeat(.W) do buffer_move_cursor(&command_buf, .WORD_RIGHT)
+		if press_and_repeat(.ZERO) do buffer_move_cursor(&command_buf, .LINE_START)
+		if press_and_repeat(.X) do buffer_delete_forward_char(&command_buf)
+
+		if shift_pressed {
+			if press_and_repeat(.I) {
+				buffer_move_cursor(&command_buf, .FIRST_NON_BLANK)
+				change_mode(p, .COMMAND)
+			}
+
+			if press_and_repeat(.A) {
+				buffer_move_cursor(&command_buf, .LINE_END)
+				append_right_motion(p)
+			}
+
+			if press_and_repeat(.FOUR) do buffer_move_cursor(&command_buf, .LINE_END)
+
+			if press_and_repeat(.D) do buffer_delete_to_line_end(&command_buf)
+			if press_and_repeat(.C) {
+				buffer_delete_to_line_end(&command_buf)
+				change_mode(p, .COMMAND)
+			}
+
+			if press_and_repeat(.MINUS) do buffer_move_cursor(&command_buf, .FIRST_NON_BLANK)
+		}
+
+		if press_and_repeat(.I) do change_mode(p, .COMMAND)
+		if press_and_repeat(.A) {
+			buffer := &p.status_line.command_buf
+
+			current_line_end := len(buffer.data)
+			if buffer.cursor.line < len(buffer.line_starts) - 1 {
+				current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+			}
+
+			// Only move right if we're not already at the end of the line.
+			if buffer.cursor.pos < current_line_end {
+				n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+				buffer.cursor.pos += n_bytes
+			}
+
+			change_mode(p, .COMMAND)
 		}
 	}
 }
@@ -238,14 +294,13 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
 	// Default movements between all modes.
-	if press_and_repeat(.LEFT)  do buffer_move_cursor(&p.buffer, .LEFT)
+	if press_and_repeat(.LEFT) do buffer_move_cursor(&p.buffer, .LEFT)
 	if press_and_repeat(.RIGHT) do buffer_move_cursor(&p.buffer, .RIGHT)
 	if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
 	if press_and_repeat(.DOWN) do buffer_move_cursor(&p.buffer, .DOWN)
 	if press_and_repeat(.DELETE) do buffer_delete_forward_char(&p.buffer)
 	if press_and_repeat(.HOME) do buffer_move_cursor(&p.buffer, .LINE_START)
 	if press_and_repeat(.END) do buffer_move_cursor(&p.buffer, .LINE_END)
-
 
 	// Emacs pinky.
 	if ctrl_pressed {
@@ -308,7 +363,7 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 execute_command :: proc(p: ^Pulse) {
 	cmd := strings.clone_from_bytes(p.status_line.command_buf.data[:])
-	cmd = strings.trim_space(cmd) // Remove leading/trailing whitespacs.
+	cmd = strings.trim_space(cmd) // Remove leading/trailing whitespace.
 	defer delete(cmd)
 
 	// Handle different commands.
@@ -353,6 +408,15 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			append(&p.status_line.command_buf.data, ' ') // Add an initial space.
 			p.status_line.command_buf.cursor.pos = 0
 		}
+
+		if mode == .COMMAND_NORMAL do mode = .COMMAND
+	case .COMMAND_NORMAL:
+		assert(mode == .COMMAND, "We can only enter command normal mode from command insert mode")
+		if mode == .COMMAND {
+			mode = .COMMAND_NORMAL
+			buffer_move_cursor(&p.status_line.command_buf, .LEFT)
+		}
+
 	}
 }
 
@@ -368,7 +432,7 @@ change_keymap_mode :: proc(p: ^Pulse, allocator := context.allocator) {
 }
 
 get_out_of_command_mode :: proc(p: ^Pulse) {
-	assert(p.keymap.vim_state.mode == .COMMAND)
+	assert(p.keymap.vim_state.mode == .COMMAND || p.keymap.vim_state.mode == .COMMAND_NORMAL)
 
 	// Restore prev mode.
 	parent_mode := p.keymap.vim_state.parent_mode
