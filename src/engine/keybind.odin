@@ -148,10 +148,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
 		// Default movements between all modes.
-		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(&p.buffer, .LEFT)
-		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(&p.buffer, .RIGHT)
-		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(&p.buffer, .UP)
-		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(&p.buffer, .DOWN)
+		if press_and_repeat(.LEFT) do buffer_move_cursor(&p.buffer, .LEFT)
+		if press_and_repeat(.RIGHT) do buffer_move_cursor(&p.buffer, .RIGHT)
+		if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
+		if press_and_repeat(.DOWN) do buffer_move_cursor(&p.buffer, .DOWN)
 		if press_and_repeat(.DELETE) do buffer_delete_forward_char(&p.buffer)
 		if press_and_repeat(.HOME) do buffer_move_cursor(&p.buffer, .LINE_START)
 		if press_and_repeat(.END) do buffer_move_cursor(&p.buffer, .LINE_END)
@@ -238,10 +238,10 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
 	// Default movements between all modes.
-	if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(&p.buffer, .LEFT)
-	if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(&p.buffer, .RIGHT)
-	if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(&p.buffer, .UP)
-	if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(&p.buffer, .DOWN)
+	if press_and_repeat(.LEFT)  do buffer_move_cursor(&p.buffer, .LEFT)
+	if press_and_repeat(.RIGHT) do buffer_move_cursor(&p.buffer, .RIGHT)
+	if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
+	if press_and_repeat(.DOWN) do buffer_move_cursor(&p.buffer, .DOWN)
 	if press_and_repeat(.DELETE) do buffer_delete_forward_char(&p.buffer)
 	if press_and_repeat(.HOME) do buffer_move_cursor(&p.buffer, .LINE_START)
 	if press_and_repeat(.END) do buffer_move_cursor(&p.buffer, .LINE_END)
