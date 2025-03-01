@@ -90,6 +90,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.ZERO) do buffer_move_cursor(&p.buffer, .LINE_START)
 		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
 		if press_and_repeat(.W) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
+		if press_and_repeat(.E) do buffer_move_cursor(&p.buffer, .WORD_END)
 
 		if shift_pressed {
 			if press_and_repeat(.I) {

@@ -41,6 +41,7 @@ Cursor_Movement :: enum {
 	LINE_END,
 	WORD_LEFT,
 	WORD_RIGHT,
+	WORD_END,
 	FIRST_NON_BLANK,
 	// TODO: A lot more
 }
@@ -374,6 +375,56 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			buffer.cursor.pos += 1
 		}
 
+		horizontal = true
+
+	case .WORD_END:
+		original_pos := buffer.cursor.pos
+		current_line_end := len(buffer.data)
+
+		if buffer.cursor.line < len(buffer.line_starts) - 1 {
+			current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+		}
+
+		// Move forward one character (if possible man).
+		if buffer.cursor.pos < current_line_end {
+			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+			buffer.cursor.pos += n_bytes
+		} else {
+			break // Already at line end.
+		}
+
+		// Skip whitespace forward.
+		for buffer.cursor.pos < current_line_end &&
+		    is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
+			buffer.cursor.pos += 1
+		}
+
+		if buffer.cursor.pos >= current_line_end do break
+
+		// Get current word type.
+		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		current_class := is_word_character(current_rune)
+
+		// Find word end.
+		for buffer.cursor.pos < current_line_end {
+			r, n := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+			if n == 0 ||
+			   is_whitespace_byte(buffer.data[buffer.cursor.pos]) ||
+			   is_word_character(r) != current_class {
+				break
+			}
+			buffer.cursor.pos += n
+		}
+
+		// Step back to last valid position.
+		if buffer.cursor.pos > original_pos {
+			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		}
+
+		// Clamp to line end.
+		if buffer.cursor.pos > current_line_end {
+			buffer.cursor.pos = current_line_end
+		}
 		horizontal = true
 
 	// 
