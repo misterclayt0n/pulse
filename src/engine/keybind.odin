@@ -102,6 +102,12 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 				buffer_move_cursor(&p.buffer, .LINE_END) 
 				append_right_motion(p)
 			} 
+
+			if press_and_repeat(.D) do buffer_delete_to_line_end(&p.buffer)
+			if press_and_repeat(.C) {
+				buffer_delete_to_line_end(&p.buffer)
+				change_mode(p, .INSERT)
+			}
 		}
 
 		if press_and_repeat(.I) {
@@ -202,6 +208,7 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			}
 		} 
 		if press_and_repeat(.A) do buffer_move_cursor(&p.buffer, .LINE_START)
+		if press_and_repeat(.K) do buffer_delete_to_line_end(&p.buffer)
 	}
 
 	// How do people live like this man...

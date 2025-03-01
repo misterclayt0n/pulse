@@ -207,6 +207,34 @@ buffer_delete_word :: proc(buffer: ^Buffer) {
 	buffer_update_line_starts(buffer)
 }
 
+buffer_delete_to_line_end :: proc(buffer: ^Buffer) {
+	current_line := buffer.cursor.line
+	if current_line >= len(buffer.line_starts) do return
+
+	// Get line boundaries.
+	start_pos := buffer.line_starts[current_line]
+	end_pos := len(buffer.data) // Default to buffer end for last line.
+
+	// Adjust end_pos for non-last lines (exclude newline).
+	if current_line < len(buffer.line_starts) - 1 {
+		end_pos = buffer.line_starts[current_line + 1] - 1
+	}
+
+	// Clamp cursor position to valid range.
+	cursor_pos := clamp(buffer.cursor.pos, start_pos, end_pos)
+
+	// Calculate bytes to delete.
+	delete_count := end_pos - cursor_pos
+	if delete_count <= 0 do return
+
+	// Actually perform the damn deletion.
+	copy(buffer.data[cursor_pos:], buffer.data[end_pos:])
+	resize(&buffer.data, len(buffer.data) - delete_count)
+	buffer.cursor.pos = cursor_pos
+	buffer.dirty = true
+	buffer_update_line_starts(buffer)
+}
+
 // REFACTOR: This function takes quite a lot of cost
 buffer_update_line_starts :: proc(buffer: ^Buffer) {
 	// Clear existing line starts and add first line
