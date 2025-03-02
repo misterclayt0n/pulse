@@ -132,6 +132,21 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if press_and_repeat(.FOUR) do buffer_move_cursor(&p.buffer, .LINE_END)
 		}
 
+		if press_and_repeat(.O) {
+			if shift_pressed {
+				// 'O': Insert new line above
+				buffer_move_cursor(&p.buffer, .LINE_START)
+				buffer_insert_char(&p.buffer, '\n')
+				buffer_move_cursor(&p.buffer, .UP)
+				change_mode(p, .INSERT)
+			} else {
+				// 'o': Insert new line below
+				buffer_move_cursor(&p.buffer, .LINE_END)
+				buffer_insert_char(&p.buffer, '\n')
+				change_mode(p, .INSERT)
+			}
+		}
+
 		if press_and_repeat(.I) {
 			if shift_pressed {
 				buffer_move_cursor(&p.buffer, .FIRST_NON_BLANK)
@@ -292,6 +307,7 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 	ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 	alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
+	shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
 
 	// Default movements between all modes.
 	if press_and_repeat(.LEFT) do buffer_move_cursor(&p.buffer, .LEFT)
@@ -323,9 +339,29 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 		if press_and_repeat(.A) do buffer_move_cursor(&p.buffer, .LINE_START)
 		if press_and_repeat(.K) do buffer_delete_to_line_end(&p.buffer)
+
+		if press_and_repeat(.ENTER) {
+			if shift_pressed {
+				// Ctrl+Shift+Enter - Insert line above.
+				original_line := p.buffer.cursor.line
+				original_pos := p.buffer.cursor.pos
+
+				// Move to line start and insert newline.
+				buffer_move_cursor(&p.buffer, .LINE_START)
+				buffer_insert_char(&p.buffer, '\n')
+
+				// Explicitly set cursor to new line's start.
+				p.buffer.cursor.line = original_line // New line is created above, so damn same index.
+				p.buffer.cursor.pos = p.buffer.line_starts[p.buffer.cursor.line]
+			} else {
+				buffer_move_cursor(&p.buffer, .LINE_END)
+				buffer_insert_char(&p.buffer, '\n')
+			}
+		}
 	}
 
 	// How do people live like this man...
+	// Pretty sure I'm one of them... I mean, I'm kinda creating an emacs mode for a reason after all.
 	if alt_pressed {
 		if press_and_repeat(.F) do buffer_move_cursor(&p.buffer, .WORD_RIGHT)
 		if press_and_repeat(.B) do buffer_move_cursor(&p.buffer, .WORD_LEFT)
@@ -341,7 +377,12 @@ emacs_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	if press_and_repeat(.RIGHT) do buffer_move_cursor(&p.buffer, .RIGHT)
 	if press_and_repeat(.UP) do buffer_move_cursor(&p.buffer, .UP)
 	if press_and_repeat(.DOWN) do buffer_move_cursor(&p.buffer, .DOWN)
-	if press_and_repeat(.ENTER) do buffer_insert_char(&p.buffer, '\n')
+	if press_and_repeat(.ENTER) {
+		// Only insert newline if Ctrl isn't pressed
+		if !ctrl_pressed {
+			buffer_insert_char(&p.buffer, '\n')
+		}
+	}
 
 	if press_and_repeat(.BACKSPACE) {
 		if ctrl_pressed || alt_pressed do buffer_delete_word(&p.buffer)
@@ -465,3 +506,4 @@ append_right_motion :: proc(p: ^Pulse) {
 press_and_repeat :: proc(key: rl.KeyboardKey) -> bool {
 	return rl.IsKeyPressed(key) || rl.IsKeyPressedRepeat(key)
 }
+

@@ -349,13 +349,13 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 			break
 		}
 
-		// Handle empty lines differently
+		// Handle empty lines differently.
 		if current_line_length == 0 {
 			buffer.cursor.pos = current_line_start
 		} else {
 			if current_line < len(buffer.line_starts) - 1 {
 				line_end_pos := buffer.line_starts[current_line + 1] - 1
-				// Only adjust if we have a newline character
+				// Only adjust if we have a newline character.
 				if line_end_pos >= 0 && buffer.data[line_end_pos] == '\n' {
 					buffer.cursor.pos = line_end_pos - 1
 				} else {
@@ -369,21 +369,21 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	case .WORD_LEFT:
 		if buffer.cursor.pos <= 0 do break
 
-		// Move to previous rune start
+		// Move to previous rune start.
 		buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
 
-		// Skip whitespace backwards
+		// Skip whitespace backwards.
 		for buffer.cursor.pos > 0 && is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
 			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
 		}
 
 		if buffer.cursor.pos <= 0 do break
 
-		// Determine current character type
+		// Determine current character type.
 		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
 		is_word := is_word_character(current_rune)
 
-		// Move backward through same-type characters
+		// Move backward through same-type characters.
 		for buffer.cursor.pos > 0 {
 			prev_pos := prev_rune_start(buffer.data[:], buffer.cursor.pos)
 			r, _ := utf8.decode_rune(buffer.data[prev_pos:])

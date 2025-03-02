@@ -44,6 +44,9 @@ Also not so sure about this, but generally speaking:
 - [ ] Maybe I'll create something like the scratch or home buffer, similar to Emacs.
 - [ ] Buffer management system, also probably copying this from emacs.
 - [ ] Some direct copy of oil.nvim or dired from emacs. This thing is just too cool (will act as my file manager).
+- [ ] Indentation control.
+- [ ] Auto pairs?
+- [ ] Mouse control.
 
 ### Commands
 - [ ] General find file command, just like emacs.
