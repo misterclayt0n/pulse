@@ -21,7 +21,7 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [ ] Visual block mode (I probably want to develop this the way Zed does it, with multiple cursors).
 
 ### Emacs
-- [ ] That whole mark thing (which is basically visual mode, so no worries here).
+Emacs?
 
 ### Editing
 - [ ] Multiple cursors (absolute must have, similar to Zed).

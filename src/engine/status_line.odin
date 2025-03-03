@@ -1,6 +1,7 @@
 package engine
 
 import "core:fmt"
+import "core:strings"
 import rl "vendor:raylib"
 
 Status_Line :: struct {
@@ -28,18 +29,13 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 		font = font,
 		padding = 10,
 		command_buf = buffer,
-		command_indicator = ""
+		command_indicator = "",
 	}
 }
 
 status_line_update :: proc(p: ^Pulse) {
 	// Update status line information.
-	switch p.keymap.mode {
-	case .VIM:
-		p.status_line.mode = fmt.tprintf("%v", p.keymap.vim_state.mode)
-	case .EMACS:
-		p.status_line.mode = "EMACS"
-	}
+	p.status_line.mode = fmt.tprintf("%v", p.keymap.vim_state.mode)
 
 	// Update line/col from main buffer.
 	p.status_line.line_number = p.buffer.cursor.line
@@ -89,12 +85,8 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	// Draw command cursor.
 	if s.mode == "COMMAND" || s.mode == "COMMAND_NORMAL" {
 		// Measure command indicator width.
-		indicator_width := rl.MeasureTextEx(
-			s.font.ray_font,
-			cstring(raw_data(s.command_indicator)),
-			f32(s.font.size),
-			s.font.spacing
-		).x
+		indicator_width :=
+			rl.MeasureTextEx(s.font.ray_font, cstring(raw_data(s.command_indicator)), f32(s.font.size), s.font.spacing).x
 
 		// Create temporary draw context for cursor.
 		ctx := Draw_Context {
