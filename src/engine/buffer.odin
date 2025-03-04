@@ -259,9 +259,8 @@ buffer_update_line_starts :: proc(window: ^Window) {
 	// Update cursor line and col.
 	cursor.line = 0
 	for i := 1; i < len(buffer.line_starts); i += 1 {
-		if cursor.pos >= buffer.line_starts[i] {
-			cursor.line = i
-		}
+		if cursor.pos >= buffer.line_starts[i] do cursor.line = i
+		else do break
 	}
 
 	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
@@ -562,8 +561,8 @@ buffer_draw :: proc(
 	ctx: Draw_Context,
 	allocator := context.allocator,
 ) {
-	buffer_draw_scissor_begin(ctx)
-	defer buffer_draw_scissor_end()
+	// buffer_draw_scissor_begin(ctx)
+	// defer buffer_draw_scissor_end()
 
 	buffer_draw_visible_lines(window, font, ctx, allocator)
 	buffer_draw_cursor(window, font, ctx)
@@ -632,10 +631,17 @@ buffer_draw_visible_lines :: proc(
 	for line in ctx.first_line ..= ctx.last_line {
 		line_start := buffer.line_starts[line]
 		line_end := len(buffer.data)
+
 		if line < len(buffer.line_starts) - 1 {
-			// Exclude newline.
-			line_end = buffer.line_starts[line + 1] - 1
+			// Check if next line starts with a newline.
+			next_line_start := buffer.line_starts[line + 1]
+			if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
+				line_end = next_line_start - 1 // Exclude newline.
+			} else {
+				line_end = next_line_start
+			}
 		}
+
 		// Convert the line slice to a C-string.
 		line_text := buffer.data[line_start:line_end]
 		line_str := strings.clone_to_cstring(string(line_text), allocator)
@@ -672,18 +678,3 @@ buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
 
 	return end - start
 }
-
-// Begin and end scissor mode using the draw context.
-buffer_draw_scissor_begin :: proc(ctx: Draw_Context) {
-	rl.BeginScissorMode(
-		i32(ctx.position.x),
-		i32(ctx.position.y),
-		ctx.screen_width,
-		ctx.screen_height,
-	)
-}
-
-buffer_draw_scissor_end :: proc() {
-	rl.EndScissorMode()
-}
-

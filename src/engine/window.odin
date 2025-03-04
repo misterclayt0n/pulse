@@ -107,100 +107,70 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	screen_height := i32(w.rect.height)
 	line_height := f32(font.size) + font.spacing
 
-	// Calculate visible lines based on w scroll position.
+	// Calculate visible lines based on w scroll position..
 	first_visible_line := int((w.scroll.y - 10) / line_height)
 	last_visible_line := int((w.scroll.y + f32(screen_height) + 10) / line_height)
 	first_visible_line = max(0, first_visible_line)
 	last_visible_line = min(len(w.buffer.line_starts) - 1, last_visible_line)
 
+	// Set up camera to use scroll position but draw text at fixed origin.
+	camera := rl.Camera2D {
+		offset   = {w.rect.x, w.rect.y}, // Screen position of the window.
+		target   = {w.scroll.x, w.scroll.y}, // Scroll offset in text space.
+		rotation = 0,
+		zoom     = 1,
+	}
+
+	// Set scissor to strictly clip to window bounds.
+	rl.BeginScissorMode(i32(w.rect.x), i32(w.rect.y), i32(w.rect.width), i32(w.rect.height))
+	defer rl.EndScissorMode()
+
+	rl.BeginMode2D(camera)
+	defer rl.EndMode2D()
+
 	ctx := Draw_Context {
-		position      = rl.Vector2{w.rect.x + 10, w.rect.y + 10},
-		screen_width  = screen_width,
-		screen_height = screen_height,
+		position      = {10, 10}, 
+		screen_width  = i32(w.rect.width),
+		screen_height = i32(w.rect.height),
 		first_line    = first_visible_line,
 		last_line     = last_visible_line,
 		line_height   = int(line_height),
 	}
 
-	// Set up camera for w.
-	camera := rl.Camera2D {
-		offset   = {w.rect.x, w.rect.y},
-		target   = {w.scroll.x, w.scroll.y},
-		rotation = 0,
-		zoom     = 1,
-	}
-
-	rl.BeginMode2D(camera)
-	defer rl.EndMode2D()
-
 	buffer_draw(w, font, ctx, allocator)
 }
 
-window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
-	// ASSERT?
-	if len(p.windows) == 0 do return
+window_split_vertical :: proc(p: ^Pulse, w: ^Window, allocator := context.allocator) {
+	w.split_type = .VERTICAL
 
-	original := p.current_window
-	original.is_focus = false
+	original_rect := w.rect
+	new_width := original_rect.width / 2
 
-	// Share the same buffer between splits.
-	new_buffer := original.buffer
+	w.rect.width = new_width
 
-	// Calculate new dimensions.
-	original_width := original.rect.width
-	new_width := original_width / 2
-	original.rect.width = new_width
+	// Right side.
+	new_window := window_init(
+		w.buffer,
+		rl.Rectangle {
+			x = original_rect.x + new_width,
+			y = original_rect.y,
+			width = new_width,
+			height = original_rect.height,
+		},
+		allocator,
+	)
 
-	new_rect := rl.Rectangle {
-		x      = original.rect.x + new_width,
-		y      = original.rect.y,
-		width  = original_width - new_width,
-		height = original.rect.height,
-	}
+	new_window.is_focus = false
+	new_window.scroll = w.scroll
+	new_window.cursor = w.cursor
 
-	new_window := window_init(new_buffer, new_rect)
-	new_window.is_focus = true
+	w.children[0] = w // NOTE: Self-reference isn't needed here, but keeping structure.
+	w.children[1] = new(Window, allocator)
+	w.children[1]^ = new_window
+	new_window.parent = w
+
 	append(&p.windows, new_window)
-	p.current_window = &p.windows[len(p.windows) - 1]
-}
 
-window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
-	// ASSERT?
-	if len(p.windows) == 0 do return
-
-	original := p.current_window
-	original.is_focus = false
-
-	// Share the same buffer between splits
-	new_buffer := original.buffer
-
-	// Calculate new dimensions
-	original_height := original.rect.height
-	new_height := original_height / 2
-	original.rect.height = new_height
-
-	new_rect := rl.Rectangle {
-		x      = original.rect.x,
-		y      = original.rect.y + new_height,
-		width  = original.rect.width,
-		height = original_height - new_height,
-	}
-
-	new_window := window_init(new_buffer, new_rect)
-	new_window.is_focus = true
-	append(&p.windows, new_window)
-	p.current_window = &p.windows[len(p.windows) - 1]
-}
-
-window_close_current :: proc(p: ^Pulse) {
-	if len(p.windows) <= 1 do return // Can't close last window
-
-	// Find current window index
-	for &w, i in p.windows {
-		if &w == p.current_window {
-			unordered_remove(&p.windows, i)
-			break
-		}
-	}
-	p.current_window = &p.windows[0]
+	window_update(w)
+	window_update(&new_window)
 }
