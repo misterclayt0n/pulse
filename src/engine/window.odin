@@ -3,15 +3,28 @@ package engine
 import rl "vendor:raylib"
 
 Window :: struct {
-	buffer:   ^Buffer,
-	rect:     rl.Rectangle,
-	scroll:   rl.Vector2,
-	is_focus: bool,
-	target_x: f32,
-	target_y: f32,
+	buffer:     ^Buffer,
+	rect:       rl.Rectangle,
+	scroll:     rl.Vector2,
+	is_focus:   bool,
+	target_x:   f32,
+	target_y:   f32,
+	split_type: Split_Type,
+	parent:     ^Window,
+	children:   [2]^Window,
 }
 
-window_init :: proc(buffer: ^Buffer, rect: rl.Rectangle, allocator := context.allocator) -> Window {
+Split_Type :: enum {
+	NONE,
+	VERTICAL,
+	HORIZONTAL,
+}
+
+window_init :: proc(
+	buffer: ^Buffer,
+	rect: rl.Rectangle,
+	allocator := context.allocator,
+) -> Window {
 	return Window {
 		buffer = buffer,
 		rect = rect,
@@ -74,42 +87,102 @@ window_scroll :: proc(w: ^Window, font: Font) {
 
 	// Lerp the camera's current position (p.camera.target) torwards the new
 	// target (p.target) for a smooth scrolling effect.
-    w.scroll.y = rl.Lerp(w.scroll.y, w.target_y, scroll_smoothness)
-    w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, scroll_smoothness)
+	w.scroll.y = rl.Lerp(w.scroll.y, w.target_y, scroll_smoothness)
+	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, scroll_smoothness)
 }
 
 window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
-    screen_width := i32(w.rect.width)
-    screen_height := i32(w.rect.height)
-    line_height := f32(font.size) + font.spacing
+	screen_width := i32(w.rect.width)
+	screen_height := i32(w.rect.height)
+	line_height := f32(font.size) + font.spacing
 
-    // Calculate visible lines based on w scroll position.
-    first_visible_line := int((w.scroll.y - 10) / line_height)
-    last_visible_line := int((w.scroll.y + f32(screen_height) + 10) / line_height)
-    first_visible_line = max(0, first_visible_line)
-    last_visible_line = min(len(w.buffer.line_starts) - 1, last_visible_line)
+	// Calculate visible lines based on w scroll position.
+	first_visible_line := int((w.scroll.y - 10) / line_height)
+	last_visible_line := int((w.scroll.y + f32(screen_height) + 10) / line_height)
+	first_visible_line = max(0, first_visible_line)
+	last_visible_line = min(len(w.buffer.line_starts) - 1, last_visible_line)
 
-    ctx := Draw_Context {
-        position = rl.Vector2{w.rect.x + 10, w.rect.y + 10},
-        screen_width = screen_width,
-        screen_height = screen_height,
-        first_line = first_visible_line,
-        last_line = last_visible_line,
-        line_height = int(line_height),
-    }
+	ctx := Draw_Context {
+		position      = rl.Vector2{w.rect.x + 10, w.rect.y + 10},
+		screen_width  = screen_width,
+		screen_height = screen_height,
+		first_line    = first_visible_line,
+		last_line     = last_visible_line,
+		line_height   = int(line_height),
+	}
 
-    // Set up camera for w.
-    camera := rl.Camera2D {
-        offset = {w.rect.x, w.rect.y},
-        target = {w.scroll.x, w.scroll.y},
-        rotation = 0,
-        zoom = 1,
-    }
+	// Set up camera for w.
+	camera := rl.Camera2D {
+		offset   = {w.rect.x, w.rect.y},
+		target   = {w.scroll.x, w.scroll.y},
+		rotation = 0,
+		zoom     = 1,
+	}
 
-    rl.BeginMode2D(camera)
-    defer rl.EndMode2D()
+	rl.BeginMode2D(camera)
+	defer rl.EndMode2D()
 
-    buffer_draw(w.buffer, font, ctx, allocator)
+	buffer_draw(w.buffer, font, ctx, allocator)
 }
 
+window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
+	// ASSERT?
+	if len(p.windows) == 0 do return
 
+	// Create new buffer sharing the same data.
+	new_buffer := new(Buffer, allocator)
+	new_buffer^ = p.current_window.buffer^
+
+	// Split the rectangle.
+	original_rect := p.current_window.rect
+	new_width := original_rect.width / 2
+
+	// Resize original window.
+	new_rect := rl.Rectangle {
+		x      = original_rect.x + new_width,
+		y      = original_rect.y,
+		width  = original_rect.width - new_width,
+		height = original_rect.height,
+	}
+
+	new_window := window_init(new_buffer, new_rect)
+	append(&p.windows, new_window)
+	p.current_window = &p.windows[len(p.windows) - 1]
+}
+
+window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
+	// ASSERT?
+	if len(p.windows) == 0 do return
+
+	new_buffer := new(Buffer, allocator)
+	new_buffer^ = p.current_window.buffer^
+
+	// Split the rectangle.
+	original_rect := p.current_window.rect
+	new_height := original_rect.height / 2
+
+	p.current_window.rect.height = new_height
+
+	new_rect := rl.Rectangle {
+		x      = original_rect.x,
+		y      = original_rect.y + new_height,
+		width  = original_rect.width,
+		height = original_rect.height - new_height,
+	}
+	new_window := window_init(new_buffer, new_rect)
+	append(&p.windows, new_window)
+	p.current_window = &p.windows[len(p.windows) - 1]
+}
+
+window_close_current :: proc(p: ^Pulse) {
+    if len(p.windows) <= 1 do return // Can't close last window
+    
+    // Find current window index
+    for &w, i in p.windows {
+        if &w == p.current_window {
+            unordered_remove(&p.windows, i)
+            break
+        }
+    }
+    p.current_window = &p.windows[0]
+}

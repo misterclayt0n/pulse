@@ -11,6 +11,7 @@ main :: proc() {
 	err := vmem.arena_init_growing(&arena)
 	assert(err == nil, "Could not init arena")
 	allocator := vmem.arena_allocator(&arena)
+	context.allocator = allocator
 
 	// Get filename from cli.
 	filename := ""
