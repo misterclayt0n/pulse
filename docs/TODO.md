@@ -47,6 +47,8 @@ Also not so sure about this, but generally speaking:
 - [ ] Indentation control.
 - [ ] Auto pairs?
 - [ ] Mouse control.
+- [ ] Not exactly UI, but hot reload?
+- [ ] Zooming fonts.
 
 ### Commands
 - [ ] General find file command, just like emacs.

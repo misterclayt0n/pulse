@@ -38,8 +38,8 @@ status_line_update :: proc(p: ^Pulse) {
 	p.status_line.mode = fmt.tprintf("%v", p.keymap.vim_state.mode)
 
 	// Update line/col from main buffer.
-	p.status_line.line_number = p.buffer.cursor.line
-	p.status_line.col_number = p.buffer.cursor.col
+	p.status_line.line_number = p.current_window.buffer.cursor.line
+	p.status_line.col_number = p.current_window.buffer.cursor.col
 }
 
 status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
