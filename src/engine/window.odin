@@ -4,6 +4,7 @@ import rl "vendor:raylib"
 
 Window :: struct {
 	buffer:     ^Buffer,
+	cursor:     Cursor,
 	rect:       rl.Rectangle,
 	scroll:     rl.Vector2,
 	is_focus:   bool,
@@ -32,17 +33,27 @@ window_init :: proc(
 		is_focus = true,
 		target_x = 0,
 		target_y = 0,
+		cursor = Cursor {
+			pos           = 0,
+			sel           = 0,
+			line          = 0,
+			col           = 0,
+			preferred_col = -1,
+			style         = .BLOCK,
+			color         = rl.GRAY,
+			blink         = false, // FIX: This shit.
+		},
 	}
 }
 
 window_update :: proc(w: ^Window) {
-	buffer_update_line_starts(w.buffer)
+	buffer_update_line_starts(w)
 }
 
 window_scroll :: proc(w: ^Window, font: Font) {
 	// Vertical scrolling logic.
 	line_height := f32(font.size) + font.spacing
-	cursor_world_y := 10 + f32(w.buffer.cursor.line) * line_height // World Y of cursor.
+	cursor_world_y := 10 + f32(w.cursor.line) * line_height // World Y of cursor.
 	window_height := f32(rl.GetScreenHeight())
 	margin_y :: 100.0
 	line_count := f32(len(w.buffer.line_starts))
@@ -61,8 +72,8 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	w.target_y = clamp(w.target_y, 0, max_target_y)
 
 	// Horizontal scrolling logic.
-	line_start := w.buffer.line_starts[w.buffer.cursor.line]
-	text_slice := w.buffer.data[line_start:w.buffer.cursor.pos]
+	line_start := w.buffer.line_starts[w.cursor.line]
+	text_slice := w.buffer.data[line_start:w.cursor.pos]
 	temp_len := len(text_slice)
 	temp := make([]u8, temp_len + 1)
 
@@ -122,30 +133,33 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	rl.BeginMode2D(camera)
 	defer rl.EndMode2D()
 
-	buffer_draw(w.buffer, font, ctx, allocator)
+	buffer_draw(w, font, ctx, allocator)
 }
 
 window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 	// ASSERT?
 	if len(p.windows) == 0 do return
 
-	// Create new buffer sharing the same data.
-	new_buffer := new(Buffer, allocator)
-	new_buffer^ = p.current_window.buffer^
+	original := p.current_window
+	original.is_focus = false
 
-	// Split the rectangle.
-	original_rect := p.current_window.rect
-	new_width := original_rect.width / 2
+	// Share the same buffer between splits.
+	new_buffer := original.buffer
 
-	// Resize original window.
+	// Calculate new dimensions.
+	original_width := original.rect.width
+	new_width := original_width / 2
+	original.rect.width = new_width
+
 	new_rect := rl.Rectangle {
-		x      = original_rect.x + new_width,
-		y      = original_rect.y,
-		width  = original_rect.width - new_width,
-		height = original_rect.height,
+		x      = original.rect.x + new_width,
+		y      = original.rect.y,
+		width  = original_width - new_width,
+		height = original.rect.height,
 	}
 
 	new_window := window_init(new_buffer, new_rect)
+	new_window.is_focus = true
 	append(&p.windows, new_window)
 	p.current_window = &p.windows[len(p.windows) - 1]
 }
@@ -154,35 +168,39 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
 	// ASSERT?
 	if len(p.windows) == 0 do return
 
-	new_buffer := new(Buffer, allocator)
-	new_buffer^ = p.current_window.buffer^
+	original := p.current_window
+	original.is_focus = false
 
-	// Split the rectangle.
-	original_rect := p.current_window.rect
-	new_height := original_rect.height / 2
+	// Share the same buffer between splits
+	new_buffer := original.buffer
 
-	p.current_window.rect.height = new_height
+	// Calculate new dimensions
+	original_height := original.rect.height
+	new_height := original_height / 2
+	original.rect.height = new_height
 
 	new_rect := rl.Rectangle {
-		x      = original_rect.x,
-		y      = original_rect.y + new_height,
-		width  = original_rect.width,
-		height = original_rect.height - new_height,
+		x      = original.rect.x,
+		y      = original.rect.y + new_height,
+		width  = original.rect.width,
+		height = original_height - new_height,
 	}
+
 	new_window := window_init(new_buffer, new_rect)
+	new_window.is_focus = true
 	append(&p.windows, new_window)
 	p.current_window = &p.windows[len(p.windows) - 1]
 }
 
 window_close_current :: proc(p: ^Pulse) {
-    if len(p.windows) <= 1 do return // Can't close last window
-    
-    // Find current window index
-    for &w, i in p.windows {
-        if &w == p.current_window {
-            unordered_remove(&p.windows, i)
-            break
-        }
-    }
-    p.current_window = &p.windows[0]
+	if len(p.windows) <= 1 do return // Can't close last window
+
+	// Find current window index
+	for &w, i in p.windows {
+		if &w == p.current_window {
+			unordered_remove(&p.windows, i)
+			break
+		}
+	}
+	p.current_window = &p.windows[0]
 }

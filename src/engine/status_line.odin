@@ -13,13 +13,17 @@ Status_Line :: struct {
 	col_number:        int,
 	font:              Font,
 	padding:           f32,
-	command_buf:       Buffer,
+	command_window:    ^Window,
 	command_indicator: string,
 }
 
 status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_Line {
-	buffer := buffer_init(allocator)
-	buffer.is_cli = true
+    command_buffer := new(Buffer, allocator)
+    command_buffer^ = buffer_init(allocator)
+    command_buffer.is_cli = true
+    
+    command_window := new(Window, allocator)
+    command_window^ = window_init(command_buffer, {0, 0, 0, 0}) // Rect will be updated during draw
 
 	return Status_Line {
 		text_color = rl.WHITE,
@@ -28,7 +32,7 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 		filename = "some file",
 		font = font,
 		padding = 10,
-		command_buf = buffer,
+		command_window = command_window,
 		command_indicator = "",
 	}
 }
@@ -38,8 +42,8 @@ status_line_update :: proc(p: ^Pulse) {
 	p.status_line.mode = fmt.tprintf("%v", p.keymap.vim_state.mode)
 
 	// Update line/col from main buffer.
-	p.status_line.line_number = p.current_window.buffer.cursor.line
-	p.status_line.col_number = p.current_window.buffer.cursor.col
+	p.status_line.line_number = p.current_window.cursor.line
+	p.status_line.col_number = p.current_window.cursor.col
 }
 
 status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
@@ -57,7 +61,7 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 
 	// Prepare status text.
 	status_text: string
-	command_text := string(s.command_buf.data[:])
+	command_text := string(s.command_window.buffer.data[:])
 
 	if s.mode == "COMMAND" || s.mode == "COMMAND_NORMAL" {
 		status_text = fmt.tprintf("%s%s", s.command_indicator, command_text)
@@ -96,6 +100,6 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 			line_height   = int(line_height),
 		}
 
-		buffer_draw_cursor(&s.command_buf, s.font, ctx)
+		buffer_draw_cursor(s.command_window, s.font, ctx)
 	}
 }

@@ -69,9 +69,9 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
         window_draw(window, p.font, allocator)
 
         // Draw border around focused window.
-        // if window.is_focus {
-        //     rl.DrawRectangleLinesEx(window.rect, 2, rl.YELLOW)
-        // }
+        if window.is_focus {
+            rl.DrawRectangleLinesEx(window.rect, 2, rl.YELLOW)
+        }
     }
 
     // Draw status line.

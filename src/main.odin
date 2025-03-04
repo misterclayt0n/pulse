@@ -29,7 +29,7 @@ main :: proc() {
 	pulse := eg.pulse_init("fonts/IosevkaNerdFont-Regular.ttf", allocator)
 
 	if filename != "" {
-		if ok := eg.buffer_load_file(pulse.current_window.buffer, filename, allocator); !ok {
+		if ok := eg.buffer_load_file(pulse.current_window, filename, allocator); !ok {
 			// TODO: Handle this error a bit better.
 			fmt.eprintln("Failed to load file:", filename)
 		}

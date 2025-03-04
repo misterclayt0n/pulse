@@ -12,7 +12,6 @@ Buffer :: struct {
 	data:        [dynamic]u8, // Dynamic array of bytes that contains text.
 	line_starts: [dynamic]int, // Indexes of the beginning of each line in the array byte.
 	dirty:       bool, // If the buffer has been modified.
-	cursor:      Cursor,
 	is_cli:      bool,
 }
 
@@ -63,16 +62,6 @@ buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buff
 		data = make([dynamic]u8, 0, initial_cap, allocator),
 		line_starts = make([dynamic]int, 1, 64, allocator),
 		dirty = false,
-		cursor = Cursor {
-			pos           = 0,
-			sel           = 0,
-			line          = 0,
-			col           = 0,
-			preferred_col = -1,
-			style         = .BLOCK,
-			color         = rl.GRAY,
-			blink         = false, // FIX: This shit.
-		},
 	}
 }
 
@@ -83,7 +72,7 @@ buffer_free :: proc(buffer: ^Buffer) {
 }
 
 buffer_load_file :: proc(
-	buffer: ^Buffer,
+	window: ^Window,
 	filename: string,
 	allocator := context.allocator,
 ) -> bool {
@@ -91,12 +80,12 @@ buffer_load_file :: proc(
 	if !ok do return false
 
 	// Replace buffer contents.
-	clear(&buffer.data)
-	append(&buffer.data, ..data)
+	clear(&window.buffer.data)
+	append(&window.buffer.data, ..data)
 
-	buffer.cursor.pos = 0
-	buffer.dirty = false
-	buffer_update_line_starts(buffer)
+	window.cursor.pos = 0
+	window.buffer.dirty = false
+	buffer_update_line_starts(window)
 
 	return true
 }
@@ -105,9 +94,10 @@ buffer_load_file :: proc(
 // Editing
 //
 
-buffer_insert_text :: proc(buffer: ^Buffer, text: string) {
+buffer_insert_text :: proc(window: ^Window, text: string) {
+	using window
 	assert(len(text) != 0, "The length of the text should not be 0")
-	offset := buffer.cursor.pos
+	offset := cursor.pos
 	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
 	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
 
@@ -123,14 +113,15 @@ buffer_insert_text :: proc(buffer: ^Buffer, text: string) {
 
 	// Insert new text.
 	copy(buffer.data[offset:], text_bytes)
-	buffer.cursor.pos += len(text_bytes)
+	cursor.pos += len(text_bytes)
 	buffer.dirty = true
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 }
 
-buffer_insert_char :: proc(buffer: ^Buffer, char: rune) {
+buffer_insert_char :: proc(window: ^Window, char: rune) {
+	using window
 	if !is_char_supported(char) do return
-	offset := buffer.cursor.pos
+	offset := cursor.pos
 	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
 	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
 
@@ -147,83 +138,87 @@ buffer_insert_char :: proc(buffer: ^Buffer, char: rune) {
 
 	// Insert new character.
 	copy(buffer.data[offset:], encoded[0:n_bytes])
-	buffer.cursor.pos += n_bytes
+	cursor.pos += n_bytes
 	buffer.dirty = true
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 }
 
-buffer_delete_char :: proc(buffer: ^Buffer) {
-	if buffer.cursor.pos <= 0 do return // NOTE: Stop deleting after the position is 0.
+buffer_delete_char :: proc(window: ^Window) {
+	using window
+	if cursor.pos <= 0 do return // NOTE: Stop deleting after the position is 0.
 
-	start_index := prev_rune_start(buffer.data[:], buffer.cursor.pos)
-	n_bytes := buffer.cursor.pos - start_index // Number of bytes in the rune.
+	start_index := prev_rune_start(buffer.data[:], cursor.pos)
+	n_bytes := cursor.pos - start_index // Number of bytes in the rune.
 
 	// Remove the rune's bytes.
-	copy(buffer.data[start_index:], buffer.data[buffer.cursor.pos:])
+	copy(buffer.data[start_index:], buffer.data[cursor.pos:])
 	resize(&buffer.data, len(buffer.data) - n_bytes)
 
-	buffer.cursor.pos = start_index
+	cursor.pos = start_index
 	buffer.dirty = true
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 }
 
-buffer_delete_forward_char :: proc(buffer: ^Buffer) {
-	if buffer.cursor.pos >= len(buffer.data) do return
+buffer_delete_forward_char :: proc(window: ^Window) {
+	using window
+	if cursor.pos >= len(buffer.data) do return
 
-	n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
+	n_bytes := next_rune_length(buffer.data[:], cursor.pos)
 	if n_bytes == 0 do return
 
 	// Delete the rune's bytes by shifting data to the left like a real chad.
-	copy(buffer.data[buffer.cursor.pos:], buffer.data[buffer.cursor.pos + n_bytes:])
+	copy(buffer.data[cursor.pos:], buffer.data[cursor.pos + n_bytes:])
 	resize(&buffer.data, len(buffer.data) - n_bytes)
 
 	buffer.dirty = true
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 }
 
-buffer_delete_word :: proc(buffer: ^Buffer) {
-	if buffer.cursor.pos <= 0 do return
+buffer_delete_word :: proc(window: ^Window) {
+	using window
+	if cursor.pos <= 0 do return
 
-	original_pos := buffer.cursor.pos
+	original_pos := cursor.pos
 	start_pos := original_pos
 
 	// Move to word start.
-	buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+	cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
 
 	// Skip whitespace backwards.
-	for buffer.cursor.pos > 0 && is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
-		buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+	for cursor.pos > 0 && is_whitespace_byte(buffer.data[cursor.pos]) {
+		cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
 	}
 
 	// Move through word character.
-	if buffer.cursor.pos > 0 {
-		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+	if cursor.pos > 0 {
+		current_rune, _ := utf8.decode_rune(buffer.data[cursor.pos:])
 		is_word := is_word_character(current_rune)
 
-		for buffer.cursor.pos > 0 {
-			prev_pos := prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		for cursor.pos > 0 {
+			prev_pos := prev_rune_start(buffer.data[:], cursor.pos)
 			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
 
 			if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word do break
 
-			buffer.cursor.pos = prev_pos
+			cursor.pos = prev_pos
 		}
 	}
 
 	// Bytes do delete.
-	delete_start := buffer.cursor.pos
+	delete_start := cursor.pos
 	delete_size := original_pos - delete_start
 
 	// Actually delete something...
 	copy(buffer.data[delete_start:], buffer.data[original_pos:])
 	resize(&buffer.data, len(buffer.data) - delete_size)
-	buffer.cursor.pos = delete_start
+	cursor.pos = delete_start
 	buffer.dirty = true
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 }
 
-buffer_delete_to_line_end :: proc(buffer: ^Buffer) {
-	current_line := buffer.cursor.line
+buffer_delete_to_line_end :: proc(window: ^Window) {
+	using window
+	current_line := cursor.line
 	if current_line >= len(buffer.line_starts) do return
 
 	// Get line boundaries.
@@ -236,7 +231,7 @@ buffer_delete_to_line_end :: proc(buffer: ^Buffer) {
 	}
 
 	// Clamp cursor position to valid range.
-	cursor_pos := clamp(buffer.cursor.pos, start_pos, end_pos)
+	cursor_pos := clamp(cursor.pos, start_pos, end_pos)
 
 	// Calculate bytes to delete.
 	delete_count := end_pos - cursor_pos
@@ -245,13 +240,14 @@ buffer_delete_to_line_end :: proc(buffer: ^Buffer) {
 	// Actually perform the damn deletion.
 	copy(buffer.data[cursor_pos:], buffer.data[end_pos:])
 	resize(&buffer.data, len(buffer.data) - delete_count)
-	buffer.cursor.pos = cursor_pos
+	cursor.pos = cursor_pos
 	buffer.dirty = true
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 }
 
 // REFACTOR: This function takes quite a lot of cost
-buffer_update_line_starts :: proc(buffer: ^Buffer) {
+buffer_update_line_starts :: proc(window: ^Window) {
+	using window
 	// Clear existing line starts and add first line
 	clear(&buffer.line_starts)
 	append(&buffer.line_starts, 0) // First line always start at 0.
@@ -261,14 +257,14 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 	}
 
 	// Update cursor line and col.
-	buffer.cursor.line = 0
+	cursor.line = 0
 	for i := 1; i < len(buffer.line_starts); i += 1 {
-		if buffer.cursor.pos >= buffer.line_starts[i] {
-			buffer.cursor.line = i
+		if cursor.pos >= buffer.line_starts[i] {
+			cursor.line = i
 		}
 	}
 
-	buffer.cursor.col = buffer.cursor.pos - buffer.line_starts[buffer.cursor.line]
+	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
 
 //
@@ -276,13 +272,14 @@ buffer_update_line_starts :: proc(buffer: ^Buffer) {
 //
 
 // NOTE: This function will probably stay being this megazord forever, and I don't care.
-buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
-	current_line_start := buffer.line_starts[buffer.cursor.line]
+buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
+	using window
+	current_line_start := buffer.line_starts[cursor.line]
 	current_line_end := len(buffer.data)
 
 	// Calculate line end position.
-	if buffer.cursor.line < len(buffer.line_starts) - 1 {
-		current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+	if cursor.line < len(buffer.line_starts) - 1 {
+		current_line_end = buffer.line_starts[cursor.line + 1] - 1
 	}
 
 	horizontal: bool
@@ -294,37 +291,37 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	// 
 
 	case .LEFT:
-		if buffer.cursor.pos > current_line_start {
-			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		if cursor.pos > current_line_start {
+			cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
 		}
 		horizontal = true
 	case .RIGHT:
 		// Only move right if we're not already at the last character.
-		if buffer.cursor.pos < current_line_end {
+		if cursor.pos < current_line_end {
 			// Special handling for CLI buffers.
 			if buffer.is_cli {
-				n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
-				buffer.cursor.pos += n_bytes
+				n_bytes := next_rune_length(buffer.data[:], cursor.pos)
+				cursor.pos += n_bytes
 			} else {
 				// Don't allow moving from last character to end-of-line position.
-				if buffer.cursor.pos + 1 == current_line_end {
+				if cursor.pos + 1 == current_line_end {
 					// We're at the last character already, don't move.
 				} else {
-					n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
-					buffer.cursor.pos += n_bytes
+					n_bytes := next_rune_length(buffer.data[:], cursor.pos)
+					cursor.pos += n_bytes
 				}
 			}
 		}
 		horizontal = true
 	case .LINE_START:
-		buffer.cursor.pos = buffer.line_starts[buffer.cursor.line]
+		cursor.pos = buffer.line_starts[cursor.line]
 		horizontal = true
 
 	case .FIRST_NON_BLANK:
-		current_line_start := buffer.line_starts[buffer.cursor.line]
+		current_line_start := buffer.line_starts[cursor.line]
 		current_line_end := len(buffer.data)
-		if buffer.cursor.line < len(buffer.line_starts) - 1 {
-			current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+		if cursor.line < len(buffer.line_starts) - 1 {
+			current_line_end = buffer.line_starts[cursor.line + 1] - 1
 		}
 
 		pos := current_line_start
@@ -335,151 +332,149 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 
 		// If all whitespace or empty line, start at start.
 		if pos == current_line_end do pos = current_line_start
-		buffer.cursor.pos = pos
+		cursor.pos = pos
 		horizontal = true
 	case .LINE_END:
-		current_line := buffer.cursor.line
+		current_line := cursor.line
 		current_line_start := buffer.line_starts[current_line]
 		current_line_length := buffer_line_length(buffer, current_line)
 
 		// Handle CLI buffers differently.
 		if buffer.is_cli {
-			buffer.cursor.pos = len(buffer.data)
+			cursor.pos = len(buffer.data)
 			horizontal = true
 			break
 		}
 
 		// Handle empty lines differently.
 		if current_line_length == 0 {
-			buffer.cursor.pos = current_line_start
+			cursor.pos = current_line_start
 		} else {
 			if current_line < len(buffer.line_starts) - 1 {
 				line_end_pos := buffer.line_starts[current_line + 1] - 1
 				// Only adjust if we have a newline character.
 				if line_end_pos >= 0 && buffer.data[line_end_pos] == '\n' {
-					buffer.cursor.pos = line_end_pos - 1
+					cursor.pos = line_end_pos - 1
 				} else {
-					buffer.cursor.pos = line_end_pos
+					cursor.pos = line_end_pos
 				}
 			} else {
-				buffer.cursor.pos = len(buffer.data)
+				cursor.pos = len(buffer.data)
 			}
 		}
 		horizontal = true
 	case .WORD_LEFT:
-		if buffer.cursor.pos <= 0 do break
+		if cursor.pos <= 0 do break
 
 		// Move to previous rune start.
-		buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
 
 		// Skip whitespace backwards.
-		for buffer.cursor.pos > 0 && is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
-			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		for cursor.pos > 0 && is_whitespace_byte(buffer.data[cursor.pos]) {
+			cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
 		}
 
-		if buffer.cursor.pos <= 0 do break
+		if cursor.pos <= 0 do break
 
 		// Determine current character type.
-		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		current_rune, _ := utf8.decode_rune(buffer.data[cursor.pos:])
 		is_word := is_word_character(current_rune)
 
 		// Move backward through same-type characters.
-		for buffer.cursor.pos > 0 {
-			prev_pos := prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		for cursor.pos > 0 {
+			prev_pos := prev_rune_start(buffer.data[:], cursor.pos)
 			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
 
 			if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word {
 				break
 			}
-			buffer.cursor.pos = prev_pos
+			cursor.pos = prev_pos
 		}
 
 		horizontal = true
 
 	case .WORD_RIGHT:
-		if buffer.cursor.pos >= len(buffer.data) do return
-		original_pos := buffer.cursor.pos
+		if cursor.pos >= len(buffer.data) do return
+		original_pos := cursor.pos
 
 		// Skip leading whitespace.
-		for buffer.cursor.pos < len(buffer.data) && is_whitespace_byte(buffer.data[buffer.cursor.pos]) do buffer.cursor.pos += 1
+		for cursor.pos < len(buffer.data) && is_whitespace_byte(buffer.data[cursor.pos]) do cursor.pos += 1
 
-		if buffer.cursor.pos >= len(buffer.data) do break
+		if cursor.pos >= len(buffer.data) do break
 
 		// Determine current character type.
-		current_rune, bytes_read := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		current_rune, bytes_read := utf8.decode_rune(buffer.data[cursor.pos:])
 		if bytes_read == 0 do break
 		is_word := is_word_character(current_rune)
 
 		// Move through same-type characters.
-		for buffer.cursor.pos <= len(buffer.data) {
+		for cursor.pos <= len(buffer.data) {
 			// See if we've hit a boundary.
-			r, n := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
-			if n == 0 || is_whitespace_byte(buffer.data[buffer.cursor.pos]) || is_word_character(r) != is_word do break
+			r, n := utf8.decode_rune(buffer.data[cursor.pos:])
+			if n == 0 || is_whitespace_byte(buffer.data[cursor.pos]) || is_word_character(r) != is_word do break
 
-			buffer.cursor.pos += n
+			cursor.pos += n
 		}
 
 		// Skip trailing whitespace.
-		for buffer.cursor.pos < len(buffer.data) &&
-		    is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
-			buffer.cursor.pos += 1
+		for cursor.pos < len(buffer.data) && is_whitespace_byte(buffer.data[cursor.pos]) {
+			cursor.pos += 1
 		}
 
 		// Ensure minimal movement.
-		if buffer.cursor.pos == original_pos && buffer.cursor.pos < len(buffer.data) {
+		if cursor.pos == original_pos && cursor.pos < len(buffer.data) {
 			// Move at least one character for single-character words.
-			buffer.cursor.pos += 1
+			cursor.pos += 1
 		}
 
 		horizontal = true
 
 	case .WORD_END:
-		original_pos := buffer.cursor.pos
+		original_pos := cursor.pos
 		current_line_end := len(buffer.data)
 
-		if buffer.cursor.line < len(buffer.line_starts) - 1 {
-			current_line_end = buffer.line_starts[buffer.cursor.line + 1] - 1
+		if cursor.line < len(buffer.line_starts) - 1 {
+			current_line_end = buffer.line_starts[cursor.line + 1] - 1
 		}
 
 		// Move forward one character (if possible man).
-		if buffer.cursor.pos < current_line_end {
-			n_bytes := next_rune_length(buffer.data[:], buffer.cursor.pos)
-			buffer.cursor.pos += n_bytes
+		if cursor.pos < current_line_end {
+			n_bytes := next_rune_length(buffer.data[:], cursor.pos)
+			cursor.pos += n_bytes
 		} else {
 			break // Already at line end.
 		}
 
 		// Skip whitespace forward.
-		for buffer.cursor.pos < current_line_end &&
-		    is_whitespace_byte(buffer.data[buffer.cursor.pos]) {
-			buffer.cursor.pos += 1
+		for cursor.pos < current_line_end && is_whitespace_byte(buffer.data[cursor.pos]) {
+			cursor.pos += 1
 		}
 
-		if buffer.cursor.pos >= current_line_end do break
+		if cursor.pos >= current_line_end do break
 
 		// Get current word type.
-		current_rune, _ := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		current_rune, _ := utf8.decode_rune(buffer.data[cursor.pos:])
 		current_class := is_word_character(current_rune)
 
 		// Find word end.
-		for buffer.cursor.pos < current_line_end {
-			r, n := utf8.decode_rune(buffer.data[buffer.cursor.pos:])
+		for cursor.pos < current_line_end {
+			r, n := utf8.decode_rune(buffer.data[cursor.pos:])
 			if n == 0 ||
-			   is_whitespace_byte(buffer.data[buffer.cursor.pos]) ||
+			   is_whitespace_byte(buffer.data[cursor.pos]) ||
 			   is_word_character(r) != current_class {
 				break
 			}
-			buffer.cursor.pos += n
+			cursor.pos += n
 		}
 
 		// Step back to last valid position.
-		if buffer.cursor.pos > original_pos {
-			buffer.cursor.pos = prev_rune_start(buffer.data[:], buffer.cursor.pos)
+		if cursor.pos > original_pos {
+			cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
 		}
 
 		// Clamp to line end.
-		if buffer.cursor.pos > current_line_end {
-			buffer.cursor.pos = current_line_end
+		if cursor.pos > current_line_end {
+			cursor.pos = current_line_end
 		}
 		horizontal = true
 
@@ -488,13 +483,12 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 	// 
 
 	case .UP:
-		if buffer.cursor.line > 0 {
+		if cursor.line > 0 {
 			// Get target col (preserved from the current position).
-			target_col :=
-				buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
+			target_col := cursor.preferred_col != -1 ? cursor.preferred_col : cursor.col
 			assert(target_col >= 0, "Target column cannot be negative")
 
-			new_line := buffer.cursor.line - 1 // Move to prev line.
+			new_line := cursor.line - 1 // Move to prev line.
 
 			// Calculate new position.
 			new_line_length := buffer_line_length(buffer, new_line)
@@ -515,16 +509,15 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 				new_pos = prev_rune_start(buffer.data[:], new_pos)
 			}
 
-			buffer.cursor.pos = new_pos
+			cursor.pos = new_pos
 		}
 	case .DOWN:
-		if buffer.cursor.line < len(buffer.line_starts) - 1 {
+		if cursor.line < len(buffer.line_starts) - 1 {
 			// Same stuff as before.
-			target_col :=
-				buffer.cursor.preferred_col != -1 ? buffer.cursor.preferred_col : buffer.cursor.col
+			target_col := cursor.preferred_col != -1 ? cursor.preferred_col : cursor.col
 			assert(target_col >= 0, "Target column cannot be negative")
 
-			new_line := buffer.cursor.line + 1 // Move to next line.
+			new_line := cursor.line + 1 // Move to next line.
 
 			// Calculate new position.
 			new_line_length := buffer_line_length(buffer, new_line)
@@ -547,15 +540,15 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 				new_pos = prev_rune_start(buffer.data[:], new_pos)
 			}
 
-			buffer.cursor.pos = new_pos
+			cursor.pos = new_pos
 		}
 	}
 
-	buffer_update_line_starts(buffer)
+	buffer_update_line_starts(window)
 
 	// Update preferred col after horizontal movements.
 	if horizontal {
-		buffer.cursor.preferred_col = buffer.cursor.col
+		cursor.preferred_col = cursor.col
 	}
 }
 
@@ -564,7 +557,7 @@ buffer_move_cursor :: proc(buffer: ^Buffer, movement: Cursor_Movement) {
 //
 
 buffer_draw :: proc(
-	buffer: ^Buffer,
+	window: ^Window,
 	font: Font,
 	ctx: Draw_Context,
 	allocator := context.allocator,
@@ -572,21 +565,22 @@ buffer_draw :: proc(
 	buffer_draw_scissor_begin(ctx)
 	defer buffer_draw_scissor_end()
 
-	buffer_draw_visible_lines(buffer, font, ctx, allocator)
-	buffer_draw_cursor(buffer, font, ctx)
+	buffer_draw_visible_lines(window, font, ctx, allocator)
+	buffer_draw_cursor(window, font, ctx)
 }
 
-buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
+buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
+	using window
 	cursor_pos := ctx.position
 
 	// Adjust vertical position based on line number.
-	cursor_pos.y += f32(buffer.cursor.line) * (f32(font.size) + font.spacing)
+	cursor_pos.y += f32(cursor.line) * (f32(font.size) + font.spacing)
 
-	assert(buffer.cursor.pos >= 0, "Cursor position must be greater or equal to 0")
+	assert(cursor.pos >= 0, "Cursor position must be greater or equal to 0")
 	assert(len(buffer.data) >= 0, "Buffer size has to be greater or equal to 0")
 
-	line_start := buffer.line_starts[buffer.cursor.line]
-	cursor_pos_clamped := min(buffer.cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
+	line_start := buffer.line_starts[cursor.line]
+	cursor_pos_clamped := min(cursor.pos, len(buffer.data)) // NOTE: Make sure we cannot slice beyond the buffer size.
 	assert(
 		line_start <= cursor_pos_clamped,
 		"Line start index must be less or equal to clamped cursor position",
@@ -603,37 +597,38 @@ buffer_draw_cursor :: proc(buffer: ^Buffer, font: Font, ctx: Draw_Context) {
 	cursor_pos.x +=
 		rl.MeasureTextEx(font.ray_font, cstring(&temp_text[0]), f32(font.size), font.spacing).x
 
-	if buffer.cursor.blink && (int(rl.GetTime() * 2) % 2 == 0) do return
+	if cursor.blink && (int(rl.GetTime() * 2) % 2 == 0) do return
 
 	font_size := f32(font.size)
 
-	switch buffer.cursor.style {
+	switch cursor.style {
 	case .BAR:
-		rl.DrawLineV(cursor_pos, {cursor_pos.x, cursor_pos.y + font_size}, buffer.cursor.color)
+		rl.DrawLineV(cursor_pos, {cursor_pos.x, cursor_pos.y + font_size}, cursor.color)
 	case .BLOCK:
 		char_width := rl.MeasureTextEx(font.ray_font, "@", font_size, font.spacing).x
 		rl.DrawRectangleV(
 			cursor_pos,
 			{char_width, font_size},
-			{buffer.cursor.color.r, buffer.cursor.color.g, buffer.cursor.color.b, 128},
+			{cursor.color.r, cursor.color.g, cursor.color.b, 128},
 		)
 	case .UNDERSCORE:
 		char_width := rl.MeasureTextEx(font.ray_font, "M", font_size, font.spacing).x
 		rl.DrawLineV(
 			{cursor_pos.x, cursor_pos.y + font_size},
 			{cursor_pos.x + char_width, cursor_pos.y + font_size},
-			buffer.cursor.color,
+			cursor.color,
 		)
 	}
 }
 
 // Draws only the visible lines.
 buffer_draw_visible_lines :: proc(
-	buffer: ^Buffer,
+	window: ^Window,
 	font: Font,
 	ctx: Draw_Context,
 	allocator := context.allocator,
 ) {
+	using window
 	for line in ctx.first_line ..= ctx.last_line {
 		line_start := buffer.line_starts[line]
 		line_end := len(buffer.data)
@@ -691,3 +686,4 @@ buffer_draw_scissor_begin :: proc(ctx: Draw_Context) {
 buffer_draw_scissor_end :: proc() {
 	rl.EndScissorMode()
 }
+
