@@ -54,7 +54,7 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	// Vertical scrolling logic.
 	line_height := f32(font.size) + font.spacing
 	cursor_world_y := 10 + f32(w.cursor.line) * line_height // World Y of cursor.
-	window_height := f32(rl.GetScreenHeight())
+	window_height := w.rect.height
 	margin_y :: 100.0
 	line_count := f32(len(w.buffer.line_starts))
 	document_height := 10 + line_count * line_height
@@ -84,7 +84,7 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	text_width :=
 		rl.MeasureTextEx(font.ray_font, cstring(raw_data(temp)), f32(font.size), font.spacing).x
 	cursor_x := f32(10) + text_width
-	window_width := f32(rl.GetScreenWidth())
+	window_width := w.rect.width
 	viewport_left := w.scroll.x
 	viewport_right := viewport_left + window_width
 	margin_x :: 50.0
