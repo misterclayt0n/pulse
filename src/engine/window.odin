@@ -177,6 +177,7 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
         
         new_window.scroll = p.windows[0].scroll
         new_window.cursor = p.windows[0].cursor
+		new_window.is_focus = false
         
         append(&p.windows, new_window)
         p.current_window = &p.windows[0]  
@@ -228,6 +229,7 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
         
         new_window.scroll = p.windows[0].scroll
         new_window.cursor = p.windows[0].cursor
+		new_window.is_focus = false
         
         append(&p.windows, new_window)
         p.current_window = &p.windows[0]  
@@ -408,5 +410,53 @@ find_all_split_edges :: proc(
 			}
 		}
 	}
+}
+
+// 
+// Focus
+//
+
+// Toggle focus between the 2 windows.
+window_switch_focus :: proc(p: ^Pulse) {
+    if p.split_type == .NONE || len(p.windows) != 2 {
+        return
+    }
+    
+    new_focus_index := 1 if p.current_window == &p.windows[0] else 0
+    p.current_window.is_focus = false
+    p.current_window = &p.windows[new_focus_index]
+    p.current_window.is_focus = true
+}
+
+window_focus_left :: proc(p: ^Pulse) {
+    if p.split_type == .VERTICAL && len(p.windows) == 2 {
+        p.current_window.is_focus = false
+        p.current_window = &p.windows[0]
+        p.current_window.is_focus = true
+    }
+}
+
+window_focus_right :: proc(p: ^Pulse) {
+    if p.split_type == .VERTICAL && len(p.windows) == 2 {
+        p.current_window.is_focus = false
+        p.current_window = &p.windows[1]
+        p.current_window.is_focus = true
+    }
+}
+
+window_focus_top :: proc(p: ^Pulse) {
+    if p.split_type == .HORIZONTAL && len(p.windows) == 2 {
+        p.current_window.is_focus = false
+        p.current_window = &p.windows[0]
+        p.current_window.is_focus = true
+    }
+}
+
+window_focus_bottom :: proc(p: ^Pulse) {
+    if p.split_type == .HORIZONTAL && len(p.windows) == 2 {
+        p.current_window.is_focus = false
+        p.current_window = &p.windows[1]
+        p.current_window.is_focus = true
+    }
 }
 

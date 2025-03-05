@@ -53,11 +53,10 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(p.keymap.mode == .VIM, "Keybind mode must be set to vim in order to update it")
 
-	shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
-
 	#partial switch p.keymap.vim_state.mode {
 	case .NORMAL:
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 
 		// Default movements between all modes.
 		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
@@ -82,7 +81,6 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			change_mode(p, .INSERT)
 		}
 
-
 		if shift_pressed {
 			if press_and_repeat(.I) {
 				buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
@@ -101,9 +99,17 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			}
 			if press_and_repeat(.MINUS) do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
 
-			// Enter command mode.
 			if press_and_repeat(.SEMICOLON) do change_mode(p, .COMMAND)
 			if press_and_repeat(.FOUR) do buffer_move_cursor(p.current_window, .LINE_END)
+		}
+
+		if ctrl_pressed {
+			// REFACTOR: These bindings kind of suck in my opinion.
+			if rl.IsKeyPressed(.H) do window_focus_left(p)
+			if rl.IsKeyPressed(.L) do window_focus_right(p)
+			if rl.IsKeyPressed(.J) do window_focus_bottom(p)
+			if rl.IsKeyPressed(.K) do window_focus_top(p)
+			if rl.IsKeyPressed(.W) do window_switch_focus(p)
 		}
 
 		if press_and_repeat(.O) {
