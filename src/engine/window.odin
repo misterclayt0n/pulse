@@ -175,6 +175,37 @@ window_split_vertical :: proc(p: ^Pulse, w: ^Window, allocator := context.alloca
 	window_update(&new_window)
 }
 
+window_split_horizontal :: proc(p: ^Pulse, w: ^Window, allocator := context.allocator) {
+	w.split_type = .HORIZONTAL
+
+	original_rect := w.rect
+	new_height := original_rect.height / 2
+
+	w.rect.height = new_height
+
+	new_window := window_init(
+		w.buffer,
+		rl.Rectangle {
+			x = original_rect.x,
+			y = original_rect.y + new_height,
+			width = original_rect.width,
+			height = original_rect.height - new_height,
+		},
+		allocator,
+	)
+
+	new_window.is_focus = false
+	new_window.scroll = w.scroll
+	new_window.cursor = w.cursor
+	new_window.parent = w
+
+	append(&p.windows, new_window)
+	w.children[0] = nil
+	w.children[1] = &p.windows[len(p.windows) - 1]
+
+	window_update(w)
+	window_update(&new_window)
+}
 window_resize_tree :: proc(w: ^Window, new_rect: rl.Rectangle) {
     // Update this window's rectangle.
     w.rect = new_rect
