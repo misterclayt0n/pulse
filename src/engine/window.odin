@@ -1,24 +1,27 @@
 package engine
 
+import "core:fmt"
 import rl "vendor:raylib"
 
 Window :: struct {
-	buffer:     ^Buffer,
-	cursor:     Cursor,
-	rect:       rl.Rectangle,
-	scroll:     rl.Vector2,
-	is_focus:   bool,
-	target_x:   f32,
-	target_y:   f32,
-	split_type: Split_Type,
-	parent:     ^Window,
-	children:   [2]^Window,
+	buffer:      ^Buffer,
+	cursor:      Cursor,
+	rect:        rl.Rectangle,
+	scroll:      rl.Vector2,
+	is_focus:    bool,
+	target_x:    f32,
+	target_y:    f32,
 }
 
 Split_Type :: enum {
 	NONE,
 	VERTICAL,
 	HORIZONTAL,
+}
+
+Split_Edge :: struct {
+	type:       Split_Type,
+	start, end: rl.Vector2,
 }
 
 window_init :: proc(
@@ -140,98 +143,270 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	buffer_draw(w, font, ctx, allocator)
 }
 
-window_split_vertical :: proc(p: ^Pulse, w: ^Window, allocator := context.allocator) {
-	w.split_type = .VERTICAL
-
-	original_rect := w.rect
-	new_width := original_rect.width / 2
-
-	w.rect.width = new_width
-
-	// Right side.
-	new_window := window_init(
-		w.buffer,
-		rl.Rectangle {
-			x = original_rect.x + new_width,
-			y = original_rect.y,
-			width = new_width,
-			height = original_rect.height,
-		},
-		allocator,
-	)
-
-	new_window.is_focus = false
-	new_window.scroll = w.scroll
-	new_window.cursor = w.cursor
-	new_window.parent = w
-
-	append(&p.windows, new_window)
-
-	// Point w.children[1] to the newly appended window (last element in p.windows)
-    w.children[0] = nil // NOTE: Left child, if needed later.
-    w.children[1] = &p.windows[len(p.windows) - 1]
-
-	window_update(w)
-	window_update(&new_window)
-}
-
-window_split_horizontal :: proc(p: ^Pulse, w: ^Window, allocator := context.allocator) {
-	w.split_type = .HORIZONTAL
-
-	original_rect := w.rect
-	new_height := original_rect.height / 2
-
-	w.rect.height = new_height
-
-	new_window := window_init(
-		w.buffer,
-		rl.Rectangle {
-			x = original_rect.x,
-			y = original_rect.y + new_height,
-			width = original_rect.width,
-			height = original_rect.height - new_height,
-		},
-		allocator,
-	)
-
-	new_window.is_focus = false
-	new_window.scroll = w.scroll
-	new_window.cursor = w.cursor
-	new_window.parent = w
-
-	append(&p.windows, new_window)
-	w.children[0] = nil
-	w.children[1] = &p.windows[len(p.windows) - 1]
-
-	window_update(w)
-	window_update(&new_window)
-}
-window_resize_tree :: proc(w: ^Window, new_rect: rl.Rectangle) {
-    // Update this window's rectangle.
-    w.rect = new_rect
-
-    if w.split_type == .NONE do return // Early exit for leaf nodes.
-
-    #partial switch w.split_type {
-    case .VERTICAL:
-        if w.children[1] != nil { // Only check the right child for now.
-            split_pos := new_rect.width / 2
-            // Left side (current window).
-            w.rect = {new_rect.x, new_rect.y, split_pos, new_rect.height}
-            // Right side (child).
-            window_resize_tree(
-                w.children[1],
-                {new_rect.x + split_pos, new_rect.y, new_rect.width - split_pos, new_rect.height},
-            )
+window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
+    if p.split_type != .NONE {
+        window_remove_split(p)
+    }
+    
+    p.split_type = .VERTICAL
+    
+    screen_width := f32(rl.GetScreenWidth())
+    screen_height := f32(rl.GetScreenHeight())
+    split_pos := screen_width * 0.5
+    
+    if len(p.windows) > 0 {
+        p.windows[0].rect = rl.Rectangle{
+            x = 0,
+            y = 0,
+            width = split_pos,
+            height = screen_height,
         }
-    case .HORIZONTAL:
-        if w.children[1] != nil {
-            split_pos := new_rect.height / 2
-            w.rect = {new_rect.x, new_rect.y, new_rect.width, split_pos}
-            window_resize_tree(
-                w.children[1],
-                {new_rect.x, new_rect.y + split_pos, new_rect.width, new_rect.height - split_pos},
-            )
+    }
+    
+    if len(p.windows) == 1 {
+        new_window := window_init(
+            p.windows[0].buffer,
+            rl.Rectangle{
+                x = split_pos,
+                y = 0,
+                width = screen_width - split_pos,
+                height = screen_height,
+            },
+            allocator,
+        )
+        
+        new_window.scroll = p.windows[0].scroll
+        new_window.cursor = p.windows[0].cursor
+        
+        append(&p.windows, new_window)
+        p.current_window = &p.windows[0]  
+    } else if len(p.windows) > 1 {
+        p.windows[1].rect = rl.Rectangle{
+            x = split_pos,
+            y = 0,
+            width = screen_width - split_pos,
+            height = screen_height,
+        }
+    }
+    
+    for &w in p.windows {
+        window_update(&w)
+    }
+}
+
+window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
+    if p.split_type != .NONE {
+        window_remove_split(p)
+    }
+    
+    p.split_type = .HORIZONTAL
+    
+    screen_width := f32(rl.GetScreenWidth())
+    screen_height := f32(rl.GetScreenHeight()) 
+    split_pos := screen_height * 0.5
+    
+    if len(p.windows) > 0 {
+        p.windows[0].rect = rl.Rectangle{
+            x = 0,
+            y = 0,
+            width = screen_width,
+            height = split_pos,
+        }
+    }
+    
+    if len(p.windows) == 1 {
+        new_window := window_init(
+            p.windows[0].buffer,
+            rl.Rectangle{
+                x = 0,
+                y = split_pos,
+                width = screen_width,
+                height = screen_height - split_pos,
+            },
+            allocator,
+        )
+        
+        new_window.scroll = p.windows[0].scroll
+        new_window.cursor = p.windows[0].cursor
+        
+        append(&p.windows, new_window)
+        p.current_window = &p.windows[0]  
+    } else if len(p.windows) > 1 {
+        p.windows[1].rect = rl.Rectangle{
+            x = 0,
+            y = split_pos,
+            width = screen_width,
+            height = screen_height - split_pos,
+        }
+    }
+    
+    for &w in p.windows {
+        window_update(&w)
+    }
+}
+
+
+window_remove_split :: proc(p: ^Pulse) {
+    if p.split_type == .NONE || len(p.windows) <= 1 {
+        return  
+    }
+    
+    focused_window_index := -1
+    for i := 0; i < len(p.windows); i += 1 {
+        if p.windows[i].is_focus {
+            focused_window_index = i
+            break
+        }
+    }
+    
+    if focused_window_index == -1 {
+        focused_window_index = 0  
+    }
+    
+    p.windows[focused_window_index].rect = rl.Rectangle{
+        x = 0,
+        y = 0,
+        width = f32(rl.GetScreenWidth()),
+        height = f32(rl.GetScreenHeight()),
+    }
+    
+    for i := len(p.windows) - 1; i >= 0; i -= 1 {
+        if i != focused_window_index {
+            ordered_remove(&p.windows, i)
+        }
+    }
+    
+    p.current_window = &p.windows[0]
+    p.split_type = .NONE
+    
+    window_update(p.current_window)
+}
+
+window_resize_tree :: proc(p: ^Pulse, new_screen_size: rl.Vector2) {
+    screen_width := new_screen_size.x
+    screen_height := new_screen_size.y
+    
+    if len(p.windows) == 0 {
+        return
+    }
+    
+    if p.split_type == .NONE {
+        if len(p.windows) >= 1 {
+            p.windows[0].rect = rl.Rectangle{
+                x = 0, 
+                y = 0,
+                width = screen_width,
+                height = screen_height,
+            }
+        }
+    } else if p.split_type == .VERTICAL {
+        if len(p.windows) >= 2 {
+            split_pos := screen_width * 0.5  // Maintain 50/50 split.
+            
+            p.windows[0].rect = rl.Rectangle{
+                x = 0,
+                y = 0,
+                width = split_pos,
+                height = screen_height,
+            }
+            
+            p.windows[1].rect = rl.Rectangle{
+                x = split_pos,
+                y = 0,
+                width = screen_width - split_pos,
+                height = screen_height,
+            }
+        }
+    } else if p.split_type == .HORIZONTAL {
+        if len(p.windows) >= 2 {
+            split_pos := screen_height * 0.5  // Same thing here.
+            
+            p.windows[0].rect = rl.Rectangle{
+                x = 0,
+                y = 0,
+                width = screen_width,
+                height = split_pos,
+            }
+            
+            p.windows[1].rect = rl.Rectangle{
+                x = 0,
+                y = split_pos,
+                width = screen_width,
+                height = screen_height - split_pos,
+            }
         }
     }
 }
+
+// This function finds all split edges by analyzing window boundaries.
+find_all_split_edges :: proc(
+	windows: [dynamic]Window,
+	edges: ^[dynamic]Split_Edge,
+	allocator := context.allocator,
+) {
+	if len(windows) <= 1 do return
+
+	// For each pair of windows, check if they share an edge.
+	for i := 0; i < len(windows); i += 1 {
+		w1 := &windows[i]
+
+		for j := i + 1; j < len(windows); j += 1 {
+			w2 := &windows[j]
+
+			// Check if windows share an edge.
+
+			// Vertical edge (right of w1 = left of w2 or right of w2 = left of w1).
+			if abs(w1.rect.x + w1.rect.width - w2.rect.x) < 1.0 ||
+			   abs(w2.rect.x + w2.rect.width - w1.rect.x) < 1.0 {
+
+				// Find shared vertical segment.
+				y_top := max(w1.rect.y, w2.rect.y)
+				y_bottom := min(w1.rect.y + w1.rect.height, w2.rect.y + w2.rect.height)
+
+				if y_bottom > y_top {
+					edge: Split_Edge
+					edge.type = .VERTICAL
+
+					if abs(w1.rect.x + w1.rect.width - w2.rect.x) < 1.0 {
+						// w1 is to the left of w2.
+						edge.start = {w1.rect.x + w1.rect.width, y_top}
+						edge.end = {w1.rect.x + w1.rect.width, y_bottom}
+					} else {
+						// w2 is to the left of w1.
+						edge.start = {w2.rect.x + w2.rect.width, y_top}
+						edge.end = {w2.rect.x + w2.rect.width, y_bottom}
+					}
+
+					append(edges, edge)
+				}
+			}
+
+			// Horizontal edge (bottom of w1 = top of w2 or bottom of w2 = top of w1).
+			if abs(w1.rect.y + w1.rect.height - w2.rect.y) < 1.0 ||
+			   abs(w2.rect.y + w2.rect.height - w1.rect.y) < 1.0 {
+
+				// Find shared horizontal segment.
+				x_left := max(w1.rect.x, w2.rect.x)
+				x_right := min(w1.rect.x + w1.rect.width, w2.rect.x + w2.rect.width)
+
+				if x_right > x_left {
+					edge: Split_Edge
+					edge.type = .HORIZONTAL
+
+					if abs(w1.rect.y + w1.rect.height - w2.rect.y) < 1.0 {
+						// w1 is above w2.
+						edge.start = {x_left, w1.rect.y + w1.rect.height}
+						edge.end = {x_right, w1.rect.y + w1.rect.height}
+					} else {
+						// w2 is above w1.
+						edge.start = {x_left, w2.rect.y + w2.rect.height}
+						edge.end = {x_right, w2.rect.y + w2.rect.height}
+					}
+
+					append(edges, edge)
+				}
+			}
+		}
+	}
+}
+

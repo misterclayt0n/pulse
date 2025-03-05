@@ -282,9 +282,9 @@ execute_command :: proc(p: ^Pulse) {
 		fmt.println("Saving file")
 		p.should_close = true
 	case "vsplit":
-		window_split_vertical(p, p.current_window)
+		window_split_vertical(p)
 	case "split":
-		window_split_horizontal(p, p.current_window)
+		window_split_horizontal(p)
 	case:
 		fmt.println("Unknown command: %s\n", cmd)
 	}

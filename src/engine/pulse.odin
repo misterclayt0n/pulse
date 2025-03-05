@@ -22,6 +22,7 @@ Pulse :: struct {
 	keymap:         Keymap,
 	should_close:   bool,
 	screen_size:    rl.Vector2,
+	split_type:     Split_Type,
 }
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
@@ -56,14 +57,7 @@ pulse_update :: proc(p: ^Pulse) {
 	current_screen_size: rl.Vector2 = {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 
 	if current_screen_size != p.screen_size {
-		// Find root window and resize it.
-		for &w in p.windows {
-			if w.parent == nil {
-				window_resize_tree(&w, {0, 0, current_screen_size.x, current_screen_size.y})
-				break
-			}
-		}
-
+		window_resize_tree(p, current_screen_size)
 		p.screen_size = current_screen_size
 	}
 
@@ -87,30 +81,16 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	for i := 0; i < len(p.windows); i += 1 {
 		window := &p.windows[i]
 		window_draw(window, p.font, allocator)
+	}
 
-		if window.split_type != .NONE {
-			switch window.split_type {
-			case .VERTICAL:
-				// Vertical line on right edge.
-				split_x := window.rect.x + window.rect.width
-				rl.DrawLineEx(
-					{split_x, window.rect.y},
-					{split_x, window.rect.y + window.rect.height},
-					1.0,
-					split_color,
-				)
-			case .HORIZONTAL:
-				// Horizontal line on bottom edge.
-				split_y := window.rect.y + window.rect.height
-				rl.DrawLineEx(
-					{window.rect.x, split_y},
-					{window.rect.x + window.rect.width, split_y},
-					1.0,
-					split_color,
-				)
-			case .NONE: // Unreachable.
-			}
-		}
+	// Find and draw all split edges
+	edges := make([dynamic]Split_Edge, allocator)
+	defer delete(edges)
+
+	find_all_split_edges(p.windows, &edges, allocator)
+
+	for edge in edges {
+		rl.DrawLineEx(edge.start, edge.end, 1.0, split_color)
 	}
 
 	// Draw status line.
