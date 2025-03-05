@@ -163,43 +163,44 @@ window_split_vertical :: proc(p: ^Pulse, w: ^Window, allocator := context.alloca
 	new_window.is_focus = false
 	new_window.scroll = w.scroll
 	new_window.cursor = w.cursor
-
-	// w.children[0] = w // NOTE: Self-reference isn't needed here, but keeping structure.
-	w.children[1] = new(Window, allocator)
-	w.children[1]^ = new_window
 	new_window.parent = w
-	// w.children[1] = &new_window
 
 	append(&p.windows, new_window)
+
+	// Point w.children[1] to the newly appended window (last element in p.windows)
+    w.children[0] = nil // NOTE: Left child, if needed later.
+    w.children[1] = &p.windows[len(p.windows) - 1]
 
 	window_update(w)
 	window_update(&new_window)
 }
 
 window_resize_tree :: proc(w: ^Window, new_rect: rl.Rectangle) {
-	// Update this window's rectangle
-	w.rect = new_rect
+    // Update this window's rectangle.
+    w.rect = new_rect
 
-	if w.split_type == .NONE do return // Early exit for leaf nodes
+    if w.split_type == .NONE do return // Early exit for leaf nodes.
 
-	#partial switch w.split_type {
-	case .VERTICAL:
-		if w.children[0] != nil && w.children[1] != nil {
-			split_pos := new_rect.width / 2
-			window_resize_tree(w.children[0], {new_rect.x, new_rect.y, split_pos, new_rect.height})
-			window_resize_tree(
-				w.children[1],
-				{new_rect.x + split_pos, new_rect.y, new_rect.width - split_pos, new_rect.height},
-			)
-		}
-	case .HORIZONTAL:
-		if w.children[0] != nil && w.children[1] != nil {
-			split_pos := new_rect.height / 2
-			window_resize_tree(w.children[0], {new_rect.x, new_rect.y, new_rect.width, split_pos})
-			window_resize_tree(
-				w.children[1],
-				{new_rect.x, new_rect.y + split_pos, new_rect.width, new_rect.height - split_pos},
-			)
-		}
-	}
+    #partial switch w.split_type {
+    case .VERTICAL:
+        if w.children[1] != nil { // Only check the right child for now.
+            split_pos := new_rect.width / 2
+            // Left side (current window).
+            w.rect = {new_rect.x, new_rect.y, split_pos, new_rect.height}
+            // Right side (child).
+            window_resize_tree(
+                w.children[1],
+                {new_rect.x + split_pos, new_rect.y, new_rect.width - split_pos, new_rect.height},
+            )
+        }
+    case .HORIZONTAL:
+        if w.children[1] != nil {
+            split_pos := new_rect.height / 2
+            w.rect = {new_rect.x, new_rect.y, new_rect.width, split_pos}
+            window_resize_tree(
+                w.children[1],
+                {new_rect.x, new_rect.y + split_pos, new_rect.width, new_rect.height - split_pos},
+            )
+        }
+    }
 }
