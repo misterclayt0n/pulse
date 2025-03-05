@@ -602,21 +602,32 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 
 	switch cursor.style {
 	case .BAR:
-		rl.DrawLineV(cursor_pos, {cursor_pos.x, cursor_pos.y + font_size}, cursor.color)
+		if window.is_focus do rl.DrawLineV(cursor_pos, {cursor_pos.x, cursor_pos.y + font_size}, cursor.color)
 	case .BLOCK:
 		char_width := rl.MeasureTextEx(font.ray_font, "@", font_size, font.spacing).x
-		rl.DrawRectangleV(
-			cursor_pos,
-			{char_width, font_size},
-			{cursor.color.r, cursor.color.g, cursor.color.b, 128},
-		)
+		if window.is_focus {
+			rl.DrawRectangleV(
+				cursor_pos,
+				{char_width, font_size},
+				{cursor.color.r, cursor.color.g, cursor.color.b, 128},
+			)
+		} else {
+			// Draw outline-only block for unfocused windows.
+			rl.DrawRectangleLinesEx(
+				rl.Rectangle{cursor_pos.x, cursor_pos.y, char_width, font_size},
+				1,
+				{cursor.color.r, cursor.color.g, cursor.color.b, 80}, // Slightly transparent.
+			)
+		}
 	case .UNDERSCORE:
 		char_width := rl.MeasureTextEx(font.ray_font, "M", font_size, font.spacing).x
-		rl.DrawLineV(
-			{cursor_pos.x, cursor_pos.y + font_size},
-			{cursor_pos.x + char_width, cursor_pos.y + font_size},
-			cursor.color,
-		)
+		if window.is_focus {
+			rl.DrawLineV(
+				{cursor_pos.x, cursor_pos.y + font_size},
+				{cursor_pos.x + char_width, cursor_pos.y + font_size},
+				cursor.color,
+			)
+		}
 	}
 }
 
