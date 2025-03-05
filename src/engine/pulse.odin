@@ -1,6 +1,7 @@
 package engine
 
 import "core:fmt"
+import "core:sort"
 import rl "vendor:raylib"
 
 //
@@ -10,6 +11,7 @@ import rl "vendor:raylib"
 background_color :: rl.Color{28, 28, 28, 255}
 text_color :: rl.Color{235, 219, 178, 255}
 scroll_smoothness :: 0.2
+split_color :: rl.Color{60, 60, 60, 255}
 
 // Main state of the editor,
 Pulse :: struct {
@@ -86,9 +88,28 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 		window := &p.windows[i]
 		window_draw(window, p.font, allocator)
 
-		// Draw border around focused window.
-		if window.is_focus {
-			rl.DrawRectangleLinesEx(window.rect, 2, rl.YELLOW)
+		if window.split_type != .NONE {
+			switch window.split_type {
+			case .VERTICAL:
+				// Vertical line on right edge.
+				split_x := window.rect.x + window.rect.width
+				rl.DrawLineEx(
+					{split_x, window.rect.y},
+					{split_x, window.rect.y + window.rect.height},
+					1.0,
+					split_color,
+				)
+			case .HORIZONTAL:
+				// Horizontal line on bottom edge.
+				split_y := window.rect.y + window.rect.height
+				rl.DrawLineEx(
+					{window.rect.x, split_y},
+					{window.rect.x + window.rect.width, split_y},
+					1.0,
+					split_color,
+				)
+			case .NONE: // Unreachable.
+			}
 		}
 	}
 
