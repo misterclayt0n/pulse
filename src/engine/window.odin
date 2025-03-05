@@ -129,7 +129,7 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	defer rl.EndMode2D()
 
 	ctx := Draw_Context {
-		position      = {10, 10}, 
+		position      = {10, 10},
 		screen_width  = i32(w.rect.width),
 		screen_height = i32(w.rect.height),
 		first_line    = first_visible_line,
@@ -164,13 +164,42 @@ window_split_vertical :: proc(p: ^Pulse, w: ^Window, allocator := context.alloca
 	new_window.scroll = w.scroll
 	new_window.cursor = w.cursor
 
-	w.children[0] = w // NOTE: Self-reference isn't needed here, but keeping structure.
+	// w.children[0] = w // NOTE: Self-reference isn't needed here, but keeping structure.
 	w.children[1] = new(Window, allocator)
 	w.children[1]^ = new_window
 	new_window.parent = w
+	// w.children[1] = &new_window
 
 	append(&p.windows, new_window)
 
 	window_update(w)
 	window_update(&new_window)
+}
+
+window_resize_tree :: proc(w: ^Window, new_rect: rl.Rectangle) {
+	// Update this window's rectangle
+	w.rect = new_rect
+
+	if w.split_type == .NONE do return // Early exit for leaf nodes
+
+	#partial switch w.split_type {
+	case .VERTICAL:
+		if w.children[0] != nil && w.children[1] != nil {
+			split_pos := new_rect.width / 2
+			window_resize_tree(w.children[0], {new_rect.x, new_rect.y, split_pos, new_rect.height})
+			window_resize_tree(
+				w.children[1],
+				{new_rect.x + split_pos, new_rect.y, new_rect.width - split_pos, new_rect.height},
+			)
+		}
+	case .HORIZONTAL:
+		if w.children[0] != nil && w.children[1] != nil {
+			split_pos := new_rect.height / 2
+			window_resize_tree(w.children[0], {new_rect.x, new_rect.y, new_rect.width, split_pos})
+			window_resize_tree(
+				w.children[1],
+				{new_rect.x, new_rect.y + split_pos, new_rect.width, new_rect.height - split_pos},
+			)
+		}
+	}
 }

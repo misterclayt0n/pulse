@@ -19,6 +19,7 @@ Pulse :: struct {
 	status_line:    Status_Line,
 	keymap:         Keymap,
 	should_close:   bool,
+	screen_size:    rl.Vector2,
 }
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
@@ -27,8 +28,8 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	font := load_font_with_codepoints(font_path, 25, text_color, allocator) // Default font.
 
 	// Create initial window that takes up entire screen.
-    screen_width := f32(rl.GetScreenWidth())
-    screen_height := f32(rl.GetScreenHeight())
+	screen_width := f32(rl.GetScreenWidth())
+	screen_height := f32(rl.GetScreenHeight())
 
 	initial_window := window_init(buffer, {0, 0, screen_width, screen_height}, allocator)
 	windows := make([dynamic]Window, allocator)
@@ -37,16 +38,33 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	status_line := status_line_init(font)
 	keymap := keymap_init(.VIM, allocator) // Default to vim.
 
+	screen_size: rl.Vector2 = {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+
 	return Pulse {
 		windows = windows,
 		current_window = &windows[0],
 		font = font,
 		status_line = status_line,
 		keymap = keymap,
+		screen_size = screen_size,
 	}
 }
 
 pulse_update :: proc(p: ^Pulse) {
+	current_screen_size: rl.Vector2 = {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+
+	if current_screen_size != p.screen_size {
+		// Find root window and resize it.
+		for &w in p.windows {
+			if w.parent == nil {
+				window_resize_tree(&w, {0, 0, current_screen_size.x, current_screen_size.y})
+				break
+			}
+		}
+
+		p.screen_size = current_screen_size
+	}
+
 	keymap_update(p)
 	status_line_update(p)
 
@@ -63,17 +81,17 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 
 	rl.ClearBackground(background_color)
 
-    // Draw all windows.
-    for i := 0; i < len(p.windows); i += 1 {
-        window := &p.windows[i]
-        window_draw(window, p.font, allocator)
+	// Draw all windows.
+	for i := 0; i < len(p.windows); i += 1 {
+		window := &p.windows[i]
+		window_draw(window, p.font, allocator)
 
-        // Draw border around focused window.
-        if window.is_focus {
-            rl.DrawRectangleLinesEx(window.rect, 2, rl.YELLOW)
-        }
-    }
+		// Draw border around focused window.
+		if window.is_focus {
+			rl.DrawRectangleLinesEx(window.rect, 2, rl.YELLOW)
+		}
+	}
 
-    // Draw status line.
-    status_line_draw(&p.status_line, screen_width, screen_height)
+	// Draw status line.
+	status_line_draw(&p.status_line, screen_width, screen_height)
 }
