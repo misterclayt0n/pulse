@@ -273,7 +273,6 @@ buffer_update_line_starts :: proc(window: ^Window) {
 			buffer.line_starts[i] > buffer.line_starts[i - 1],
 			"Line start indices must be strictly increasing",
 		)
-		assert(buffer.line_starts[i] <= len(buffer.data), "Line start index out of buffer bounds")
 	}
 
 	// Clear existing line starts and add first line

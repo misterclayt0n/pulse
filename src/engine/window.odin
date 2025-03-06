@@ -57,6 +57,7 @@ window_update :: proc(w: ^Window) {
 	buffer_update_line_starts(w)
 }
 
+// FIX: window does not scroll on empty buffers, like if I press enter endlessly it does not scroll at all.
 window_scroll :: proc(w: ^Window, font: Font) {
 	// Vertical scrolling logic.
 	line_height := f32(font.size) + font.spacing

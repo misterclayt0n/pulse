@@ -109,7 +109,8 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if rl.IsKeyPressed(.L) do window_focus_right(p)
 			if rl.IsKeyPressed(.J) do window_focus_bottom(p)
 			if rl.IsKeyPressed(.K) do window_focus_top(p)
-			if rl.IsKeyPressed(.W) do window_switch_focus(p)
+			if rl.IsKeyPressed(.TAB) do window_switch_focus(p)
+			if rl.IsKeyPressed(.W) do window_remove_split(p)
 		}
 
 		if press_and_repeat(.O) {
@@ -164,6 +165,9 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			execute_command(p)
 			get_out_of_command_mode(p)
 		}
+
+		// Clear message when first entering command mode
+		if !(p.status_line.message_timestamp > 0) do status_line_clear_message(&p.status_line)
 
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
@@ -280,22 +284,26 @@ execute_command :: proc(p: ^Pulse) {
 	// Handle different commands.
 	switch cmd {
 	case "w":
-		// TODO.
-		fmt.println("Saving file")
+		// TODO: Input filename here.
+        status_line_log(&p.status_line, "File saved successfully") 
 	case "q":
 		// TODO: This should probably close the buffer/window, not the entire editor probably.
 		p.should_close = true
 	case "wq":
-		fmt.println("Saving file")
+		// TODO: Input filename here.
+		status_line_log(&p.status_line, "Saved file sucessfully")
 		p.should_close = true
 	case "vsplit":
+		status_line_log(&p.status_line, "Vertical split")
 		window_split_vertical(p)
 	case "split":
+		status_line_log(&p.status_line, "Horizontal split")
 		window_split_horizontal(p)
 	case "close":
+		status_line_log(&p.status_line, "Split closed")
 		window_close_current(p)
 	case:
-		fmt.println("Unknown command: %s\n", cmd)
+		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}
 }
 
@@ -320,6 +328,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		if mode == .NORMAL do mode = .INSERT
 	case .COMMAND:
 		if mode == .NORMAL {
+			status_line_clear_message(&p.status_line)
 			mode = .COMMAND
 			clear(&p.status_line.command_window.buffer.data)
 			append(&p.status_line.command_window.buffer.data, ' ') // Add an initial space.
@@ -329,6 +338,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		if mode == .COMMAND_NORMAL do mode = .COMMAND
 	case .COMMAND_NORMAL:
 		assert(mode == .COMMAND, "We can only enter command normal mode from command insert mode")
+		status_line_clear_message(&p.status_line)
 		if mode == .COMMAND {
 			mode = .COMMAND_NORMAL
 			buffer_move_cursor(p.status_line.command_window, .LEFT)

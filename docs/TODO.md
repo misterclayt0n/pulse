@@ -30,6 +30,7 @@ Emacs?
 - [ ] Undo/Redo.
 - [ ] Search.
 - [ ] Substitute (probably like Emacs as well).
+- [ ] Tab handling - Will probably just treat tabs as spaces or something? Is this the easiest way to deal with them?
 
 ### Windows
 01/03/25: I'm not so clear as well as how the window management on this editor will look like. I have considered something simple as Focus, only allowing for one vertical split, since I find that is really the only split I do, but would not hurt (and maybe even be fun) to implement more complex window behavior, I do know however:
@@ -50,6 +51,7 @@ Also not so sure about this, but generally speaking:
 - [ ] Mouse control.
 - [ ] Not exactly UI, but hot reload?
 - [ ] Zooming fonts.
+- [ ] Show empty spaces as dots (similar to how emacs does it).
 
 ### Fonts
 This is a bit of a pain in my ass, the only font I know that can render basically everything is Noto Sans, but I have to come up with a way to use a given font to render ASCII characters, and Noto Sans to render japanese/chinese/whatever. Or maybe I can just not give much of a fuck...
@@ -70,8 +72,8 @@ Very nice to have, also no idea how to implement it.
 Probably use something like tree-sitter, but how exactly I'm using this from Odin?
 
 ### Internal tools
-- [ ] Some sort of simulation to test the functionalities of the editor (similar to how Jonathan Blow does it in his games).
-- [ ] Some kind of logging after commands were successful (probably at the right corner of the status bar).
+- [ ] Some sort of simulation to test the functionalities of the editor (similar to how Jonathan Blow does it in his games) -> Deterministic simulation btw.
+- [x] Some kind of logging after commands were successful (probably at the right corner of the status bar).
 - [ ] More detailed logging at a special buffer.
 
 ### AI
