@@ -29,6 +29,9 @@ window_init :: proc(
 	rect: rl.Rectangle,
 	allocator := context.allocator,
 ) -> Window {
+	assert(buffer != nil, "Buffer must be valid")
+	assert(rect.width >= 0 && rect.height >= 0, "Window dimensions must be non-negative")
+
 	return Window {
 		buffer = buffer,
 		rect = rect,
@@ -50,6 +53,7 @@ window_init :: proc(
 }
 
 window_update :: proc(w: ^Window) {
+	assert(w != nil, "Window must be valid")
 	buffer_update_line_starts(w)
 }
 
@@ -75,6 +79,7 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	w.target_y = clamp(w.target_y, 0, max_target_y)
 
 	// Horizontal scrolling logic.
+	assert(w.cursor.line >= 0 && w.cursor.line <= len(w.buffer.line_starts), "Cursor line index out of bounds")
 	line_start := w.buffer.line_starts[w.cursor.line]
 	text_slice := w.buffer.data[line_start:w.cursor.pos]
 	temp_len := len(text_slice)
@@ -101,8 +106,8 @@ window_scroll :: proc(w: ^Window, font: Font) {
 
 	// Lerp the camera's current position (p.camera.target) torwards the new
 	// target (p.target) for a smooth scrolling effect.
-	w.scroll.y = rl.Lerp(w.scroll.y, w.target_y, scroll_smoothness)
-	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, scroll_smoothness)
+	w.scroll.y = rl.Lerp(w.scroll.y, w.target_y, SCROLL_SMOOTHNESS )
+	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, SCROLL_SMOOTHNESS )
 }
 
 window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
@@ -144,6 +149,9 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 }
 
 window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
+	assert(len(p.windows) > 0, "Cannot split on an empty window list")
+	assert(p.windows[0].buffer != nil, "Root window has corrupt buffer")
+
 	if p.split_type != .NONE {
 		window_remove_split(p)
 	}
@@ -153,6 +161,7 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 	screen_width := f32(rl.GetScreenWidth())
 	screen_height := f32(rl.GetScreenHeight())
 	split_pos := screen_width * 0.5
+	assert(split_pos > 0 && split_pos < screen_width, "Invalid vertical split position")
 
 	if len(p.windows) > 0 {
 		p.windows[0].rect = rl.Rectangle {
@@ -196,6 +205,9 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 }
 
 window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
+	assert(len(p.windows) > 0, "Cannot split on an empty window list")
+	assert(p.windows[0].buffer != nil, "Root window has corrupt buffer")
+
 	if p.split_type != .NONE {
 		window_remove_split(p)
 	}
@@ -205,6 +217,7 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
 	screen_width := f32(rl.GetScreenWidth())
 	screen_height := f32(rl.GetScreenHeight())
 	split_pos := screen_height * 0.5
+	assert(split_pos > 0 && split_pos < screen_width, "Invalid horizontal split position")
 
 	if len(p.windows) > 0 {
 		p.windows[0].rect = rl.Rectangle {
@@ -285,6 +298,9 @@ window_remove_split :: proc(p: ^Pulse) {
 }
 
 window_close_current :: proc(p: ^Pulse) {
+	old_count := len(p.windows)
+	defer assert(len(p.windows) == old_count - 1, "Close failed to remove window")
+
 	if len(p.windows) <= 1 do return
 
 	current_index := -1
@@ -310,10 +326,24 @@ window_close_current :: proc(p: ^Pulse) {
 		p.current_window.is_focus = true
 		p.split_type = .NONE
 		window_update(p.current_window)
+
+		defer {
+			assert(p.split_type == .NONE, "Close left split type active")
+			assert(
+				p.current_window.rect.width == f32(rl.GetScreenWidth()),
+				"Remaining window width mismatch",
+			)
+			assert(
+				p.current_window.rect.height == f32(rl.GetScreenHeight()),
+				"Remaining window height mismatch",
+			)
+		}
 	}
 }
 
 window_resize_tree :: proc(p: ^Pulse, new_screen_size: rl.Vector2) {
+	assert(new_screen_size.x > 0 && new_screen_size.y > 0, "Invalid screen size")
+
 	screen_width := new_screen_size.x
 	screen_height := new_screen_size.y
 

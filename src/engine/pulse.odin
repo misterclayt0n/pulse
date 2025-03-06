@@ -8,10 +8,21 @@ import rl "vendor:raylib"
 // Globals
 //
 
-background_color :: rl.Color{28, 28, 28, 255}
-text_color :: rl.Color{235, 219, 178, 255}
-scroll_smoothness :: 0.2
-split_color :: rl.Color{60, 60, 60, 255}
+BACKGROUND_COLOR :: rl.Color{28, 28, 28, 255}
+TEXT_COLOR :: rl.Color{235, 219, 178, 255}
+SCROLL_SMOOTHNESS :: 0.2
+SPLIT_COLOR :: rl.Color{60, 60, 60, 255}
+DEFAULT_FONT_SIZE :: 25
+MIN_FONT_SIZE :: 10
+MAX_FONT_SIZE :: 100
+
+// 
+// Sanity checks.
+// 
+
+#assert(DEFAULT_FONT_SIZE >= MIN_FONT_SIZE && DEFAULT_FONT_SIZE <= MAX_FONT_SIZE, "Default font size out of range")
+#assert(MIN_FONT_SIZE > 0, "Minimum font size must be positive")
+#assert(MAX_FONT_SIZE > MIN_FONT_SIZE, "Max font size must be greater than minimum")
 
 // Main state of the editor,
 Pulse :: struct {
@@ -27,16 +38,25 @@ Pulse :: struct {
 
 pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	buffer := new(Buffer, allocator)
+	assert(buffer != nil, "Buffer allocation failed")
 	buffer^ = buffer_init(allocator)
-	font := load_font_with_codepoints(font_path, 25, text_color, allocator) // Default font.
+
+	font := load_font_with_codepoints(font_path, DEFAULT_FONT_SIZE, TEXT_COLOR , allocator) // Default font.
+	assert(font.size == DEFAULT_FONT_SIZE, "Invalid font size")
 
 	// Create initial window that takes up entire screen.
 	screen_width := f32(rl.GetScreenWidth())
 	screen_height := f32(rl.GetScreenHeight())
+	assert(screen_width > 0, "Screen width must be positive")
+	assert(screen_height > 0, "Screen height must be positive")
 
 	initial_window := window_init(buffer, {0, 0, screen_width, screen_height}, allocator)
+	assert(initial_window.buffer != nil, "Window buffer is invalid")
+
 	windows := make([dynamic]Window, allocator)
 	append(&windows, initial_window)
+	assert(len(windows) > 0, "Windows array must not be empty")
+	assert(&windows[0] != nil, "Current window pointer is invalid")
 
 	status_line := status_line_init(font)
 	keymap := keymap_init(.VIM, allocator) // Default to vim.
@@ -55,10 +75,13 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 
 pulse_update :: proc(p: ^Pulse) {
 	current_screen_size: rl.Vector2 = {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+	assert(current_screen_size.x > 0, "Screen width must be greater than 0")
+	assert(current_screen_size.y > 0, "Screen height must be greater than 0")
 
 	if current_screen_size != p.screen_size {
 		window_resize_tree(p, current_screen_size)
 		p.screen_size = current_screen_size
+		assert(p.screen_size == current_screen_size, "Screen size update failed")
 	}
 
 	keymap_update(p)
@@ -66,6 +89,7 @@ pulse_update :: proc(p: ^Pulse) {
 
 	// Update all windows.
 	for &w in p.windows {
+		assert(&w != nil, "Encountered nil window in windows array")
 		window_update(&w)
 		if w.is_focus do window_scroll(&w, p.font)
 	}
@@ -74,10 +98,13 @@ pulse_update :: proc(p: ^Pulse) {
 pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	screen_width := rl.GetScreenWidth()
 	screen_height := rl.GetScreenHeight()
+	assert(screen_width > 0, "Invalid screen width")
+	assert(screen_height > 0, "Invalid screen height")
 
-	rl.ClearBackground(background_color)
+	rl.ClearBackground(BACKGROUND_COLOR )
 
 	// Draw all windows.
+	assert(len(p.windows) > 0, "No windows to draw")
 	for i := 0; i < len(p.windows); i += 1 {
 		window := &p.windows[i]
 		window_draw(window, p.font, allocator)
@@ -90,9 +117,15 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	find_all_split_edges(p.windows, &edges, allocator)
 
 	for edge in edges {
-		rl.DrawLineEx(edge.start, edge.end, 1.0, split_color)
+		assert(edge.start.x >= 0 && edge.start.x <= f32(screen_width), "Edge start x out of bounds")
+		assert(edge.end.x >= 0 && edge.end.x <= f32(screen_width), "Edge end x out of bounds")
+		assert(edge.start.y >= 0 && edge.start.y <= f32(screen_height), "Edge start y out of bounds")
+		assert(edge.end.y >= 0 && edge.end.y <= f32(screen_height), "Edge end y out of bounds")
+
+		rl.DrawLineEx(edge.start, edge.end, 1.0, SPLIT_COLOR)
 	}
 
 	// Draw status line.
+	assert(p.status_line.command_window != nil, "Invalid status line command window")
 	status_line_draw(&p.status_line, screen_width, screen_height)
 }

@@ -347,7 +347,8 @@ get_out_of_command_mode :: proc(p: ^Pulse) {
 append_right_motion :: proc(p: ^Pulse) {
 	current_line_end := len(p.current_window.buffer.data)
 	if p.current_window.cursor.line < len(p.current_window.buffer.line_starts) - 1 {
-	current_line_end = p.current_window.buffer.line_starts[p.current_window.cursor.line + 1] - 1
+		current_line_end =
+			p.current_window.buffer.line_starts[p.current_window.cursor.line + 1] - 1
 	}
 
 	// Only move right if we're not already at the end of the line.

@@ -60,6 +60,8 @@ load_font_with_codepoints :: proc(
 		color    = color,
 	}
 
+	assert(font.size > 0, "Invalid font size")
+
 	return font
 }
 

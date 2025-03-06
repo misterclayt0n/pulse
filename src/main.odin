@@ -27,6 +27,7 @@ main :: proc() {
 	defer rl.CloseWindow()
 
 	pulse := eg.pulse_init("fonts/IosevkaNerdFont-Regular.ttf", allocator)
+	assert(&pulse != nil, "Invalid pulse pointer")
 
 	if filename != "" {
 		if ok := eg.buffer_load_file(pulse.current_window, filename, allocator); !ok {

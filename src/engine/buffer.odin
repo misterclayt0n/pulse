@@ -103,6 +103,9 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 
 	text_bytes := transmute([]u8)text
 
+	assert(len(buffer.data) >= 0, "Buffer length corrupted")
+	assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
+
 	// Make space for new text.
 	resize(&buffer.data, len(buffer.data) + len(text_bytes))
 
@@ -115,18 +118,25 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 	copy(buffer.data[offset:], text_bytes)
 	cursor.pos += len(text_bytes)
 	buffer.dirty = true
+
 	buffer_update_line_starts(window)
 }
 
 buffer_insert_char :: proc(window: ^Window, char: rune) {
 	using window
+	assert(utf8.valid_rune(char), "Invalid UTF-8 rune inserted")
 	if !is_char_supported(char) do return
+	old_len := len(buffer.data)
+
 	offset := cursor.pos
 	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
 	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
 
 	// Encode rune into UTF-8.
 	encoded, n_bytes := utf8.encode_rune(char)
+
+	assert(len(buffer.data) >= 0, "Buffer length corrupted")
+	assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
 
 	// Make space for new character.
 	resize(&buffer.data, len(buffer.data) + n_bytes)
@@ -140,11 +150,16 @@ buffer_insert_char :: proc(window: ^Window, char: rune) {
 	copy(buffer.data[offset:], encoded[0:n_bytes])
 	cursor.pos += n_bytes
 	buffer.dirty = true
+	assert(len(buffer.data) >= old_len + n_bytes, "Insertion failed to grow buffer")
+
 	buffer_update_line_starts(window)
 }
 
 buffer_delete_char :: proc(window: ^Window) {
 	using window
+	assert(len(buffer.data) >= 0, "Delete called on invalid buffer")
+	old_len := len(buffer.data)
+
 	if cursor.pos <= 0 do return // NOTE: Stop deleting after the position is 0.
 
 	start_index := prev_rune_start(buffer.data[:], cursor.pos)
@@ -156,6 +171,8 @@ buffer_delete_char :: proc(window: ^Window) {
 
 	cursor.pos = start_index
 	buffer.dirty = true
+	assert(len(buffer.data) == old_len - n_bytes, "Deletion size mismatched")
+
 	buffer_update_line_starts(window)
 }
 
@@ -248,6 +265,17 @@ buffer_delete_to_line_end :: proc(window: ^Window) {
 // REFACTOR: This function takes quite a lot of cost
 buffer_update_line_starts :: proc(window: ^Window) {
 	using window
+	assert(len(buffer.line_starts) > 0, "Buffer must be have at least one line start")
+	assert(buffer.line_starts[0] == 0, "First line start must be 0")
+
+	for i := 1; i < len(buffer.line_starts); i += 1 {
+		assert(
+			buffer.line_starts[i] > buffer.line_starts[i - 1],
+			"Line start indices must be strictly increasing",
+		)
+		assert(buffer.line_starts[i] <= len(buffer.data), "Line start index out of buffer bounds")
+	}
+
 	// Clear existing line starts and add first line
 	clear(&buffer.line_starts)
 	append(&buffer.line_starts, 0) // First line always start at 0.
@@ -264,6 +292,7 @@ buffer_update_line_starts :: proc(window: ^Window) {
 	}
 
 	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
+	assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of bounds after line update")
 }
 
 //

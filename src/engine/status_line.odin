@@ -21,15 +21,17 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
     command_buffer := new(Buffer, allocator)
     command_buffer^ = buffer_init(allocator)
     command_buffer.is_cli = true
+	assert(command_buffer != nil, "Command buffer allocation failed")
     
     command_window := new(Window, allocator)
-    command_window^ = window_init(command_buffer, {0, 0, 0, 0}) // Rect will be updated during draw
+    command_window^ = window_init(command_buffer, {0, 0, 0, 0}) // Rect will be updated during draw.
+	assert(command_window != nil, "Command window allocation failed")
 
 	return Status_Line {
 		text_color = rl.WHITE,
 		bg_color = rl.Color{40, 40, 40, 255},
 		mode = "NORMAL",
-		filename = "some file",
+		filename = "some file", // TODO: Grab filename from Buffer.
 		font = font,
 		padding = 10,
 		command_window = command_window,
@@ -38,6 +40,10 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 }
 
 status_line_update :: proc(p: ^Pulse) {
+	assert(p.current_window != nil, "Current window is nil")
+	assert(p.current_window.cursor.line >= 0, "Cursor line must not be negative")
+	assert(p.current_window.cursor.col >= 0, "Cursor column must not be negative")
+
 	// Update status line information.
 	p.status_line.mode = fmt.tprintf("%v", p.keymap.vim_state.mode)
 
@@ -83,11 +89,13 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 		text_pos,
 		f32(s.font.size),
 		s.font.spacing,
-		s.text_color,
+		s.text_color ,
 	)
 
 	// Draw command cursor.
 	if s.mode == "COMMAND" || s.mode == "COMMAND_NORMAL" {
+		assert(s.command_window != nil, "Command window must be valid")
+		assert(len(s.command_window.buffer.data) >= 0, "Buffer data length should be non-negative")
 		// Measure command indicator width.
 		indicator_width :=
 			rl.MeasureTextEx(s.font.ray_font, cstring(raw_data(s.command_indicator)), f32(s.font.size), s.font.spacing).x
