@@ -57,35 +57,46 @@ window_update :: proc(w: ^Window) {
 	buffer_update_line_starts(w)
 }
 
-// FIX: window does not scroll on empty buffers, like if I press enter endlessly it does not scroll at all.
 window_scroll :: proc(w: ^Window, font: Font) {
-	// Vertical scrolling logic.
+	// 
+	// Vertical scrolling logic
+	// 
+
 	line_height := f32(font.size) + font.spacing
-	cursor_world_y := 10 + f32(w.cursor.line) * line_height // World Y of cursor.
+	cursor_world_y := 10 + f32(w.cursor.line) * line_height
 	window_height := w.rect.height
 	margin_y :: 100.0
+
+	// Add margin to document height to create empty space at the bottom.
 	line_count := f32(len(w.buffer.line_starts))
 	document_height := 10 + line_count * line_height
-	max_target_y := max(0, document_height - window_height)
 
 	// Calculate cursor position relative to current viewport.
 	cursor_screen_y := cursor_world_y - w.scroll.y
+	needs_scroll := false
 
 	if cursor_screen_y < margin_y {
-		w.target_y = cursor_world_y - margin_y
+		// Compute how far the cursor is into the margin area.
+		delta := margin_y - cursor_screen_y
+		// Adjust the target relative to the current scroll.
+		w.target_y = max(0, w.scroll.y - delta)
 	} else if cursor_screen_y > (window_height - margin_y) {
-		w.target_y = cursor_world_y - (window_height - margin_y)
+		delta := cursor_screen_y - (window_height - margin_y)
+		w.target_y = w.scroll.y + delta
 	}
-	// NOTE: Clamp to prevent showing empty space beyond the document.
-	w.target_y = clamp(w.target_y, 0, max_target_y)
 
-	// Horizontal scrolling logic.
-	assert(w.cursor.line >= 0 && w.cursor.line <= len(w.buffer.line_starts), "Cursor line index out of bounds")
+	// 
+	// Horizontal scrolling logic
+	// 
+
+	assert(
+		w.cursor.line >= 0 && w.cursor.line <= len(w.buffer.line_starts),
+		"Cursor line index out of bounds",
+	)
 	line_start := w.buffer.line_starts[w.cursor.line]
 	text_slice := w.buffer.data[line_start:w.cursor.pos]
 	temp_len := len(text_slice)
 	temp := make([]u8, temp_len + 1)
-
 	defer delete(temp)
 	if temp_len > 0 do copy(temp, text_slice)
 	temp[temp_len] = 0
@@ -107,8 +118,8 @@ window_scroll :: proc(w: ^Window, font: Font) {
 
 	// Lerp the camera's current position (p.camera.target) torwards the new
 	// target (p.target) for a smooth scrolling effect.
-	w.scroll.y = rl.Lerp(w.scroll.y, w.target_y, SCROLL_SMOOTHNESS )
-	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, SCROLL_SMOOTHNESS )
+	w.scroll.y = rl.Lerp(w.scroll.y, w.target_y, SCROLL_SMOOTHNESS)
+	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, SCROLL_SMOOTHNESS)
 }
 
 window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
