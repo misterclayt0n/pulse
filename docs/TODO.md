@@ -5,9 +5,9 @@ This file contains just some general high level ideas of things I want to implem
     `request_redraw` for explicit changes.
     `dirty_frame` for periodic updates (cursor blink).
     `dirty` flag in `Buffer` for cached line metrics.
-- [ ] Window resize handling? 
+- [ ] Window resize handling?
 - [ ] Cached line metrics - Pre-calculate line widths and lenghts during edits.
-- [ ] Partial redraws - Only recalculate visible lines when scroll position changes. 
+- [ ] Partial redraws - Only recalculate visible lines when scroll position changes.
 - [ ] Temporal cache validation - Uses frame timing to manage blink updates
 
 # General stuff
@@ -32,11 +32,12 @@ Emacs?
 - [ ] Substitute (probably like Emacs as well).
 
 ### Windows
-I'm not so clear as well as how the window management on this editor will look like.
-I have considered something simple as Focus, only allowing for one vertical split, since I find that is really the only split I do, but would not hurt (and maybe even be fun) to implement more complex window behavior, I do know however:
-- [ ] Resizable windows.
-- [ ] Vertical splits.
-- [ ] There should only be one status line in the entire editor, but it should update the file name and information depending upon which window it's at.
+01/03/25: I'm not so clear as well as how the window management on this editor will look like. I have considered something simple as Focus, only allowing for one vertical split, since I find that is really the only split I do, but would not hurt (and maybe even be fun) to implement more complex window behavior, I do know however:
+06/03/25: Well, so far only one split at a time, because it was starting to be a pain to develop this. If I ever need more than 1 split at a time, I can just implement this feature, but for now, this is all there will be to windows.
+- [x] Resizable windows.
+- [x] Vertical splits.
+- [x] Horizontal splits.
+- [x] There should only be one status line in the entire editor, but it should update the file name and information depending upon which window it's at.
 
 ### UI
 Also not so sure about this, but generally speaking:
@@ -70,6 +71,7 @@ Probably use something like tree-sitter, but how exactly I'm using this from Odi
 
 ### Internal tools
 - [ ] Some sort of simulation to test the functionalities of the editor (similar to how Jonathan Blow does it in his games).
+- [ ] Some kind of logging after commands were successful (probably at the right corner of the status bar).
 
 ### AI
 Interesting...
