@@ -4,13 +4,13 @@ import "core:fmt"
 import rl "vendor:raylib"
 
 Window :: struct {
-	buffer:      ^Buffer,
-	cursor:      Cursor,
-	rect:        rl.Rectangle,
-	scroll:      rl.Vector2,
-	is_focus:    bool,
-	target_x:    f32,
-	target_y:    f32,
+	buffer:   ^Buffer,
+	cursor:   Cursor,
+	rect:     rl.Rectangle,
+	scroll:   rl.Vector2,
+	is_focus: bool,
+	target_x: f32,
+	target_y: f32,
 }
 
 Split_Type :: enum {
@@ -144,200 +144,229 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 }
 
 window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
-    if p.split_type != .NONE {
-        window_remove_split(p)
-    }
-    
-    p.split_type = .VERTICAL
-    
-    screen_width := f32(rl.GetScreenWidth())
-    screen_height := f32(rl.GetScreenHeight())
-    split_pos := screen_width * 0.5
-    
-    if len(p.windows) > 0 {
-        p.windows[0].rect = rl.Rectangle{
-            x = 0,
-            y = 0,
-            width = split_pos,
-            height = screen_height,
-        }
-    }
-    
-    if len(p.windows) == 1 {
-        new_window := window_init(
-            p.windows[0].buffer,
-            rl.Rectangle{
-                x = split_pos,
-                y = 0,
-                width = screen_width - split_pos,
-                height = screen_height,
-            },
-            allocator,
-        )
-        
-        new_window.scroll = p.windows[0].scroll
-        new_window.cursor = p.windows[0].cursor
+	if p.split_type != .NONE {
+		window_remove_split(p)
+	}
+
+	p.split_type = .VERTICAL
+
+	screen_width := f32(rl.GetScreenWidth())
+	screen_height := f32(rl.GetScreenHeight())
+	split_pos := screen_width * 0.5
+
+	if len(p.windows) > 0 {
+		p.windows[0].rect = rl.Rectangle {
+			x      = 0,
+			y      = 0,
+			width  = split_pos,
+			height = screen_height,
+		}
+	}
+
+	if len(p.windows) == 1 {
+		new_window := window_init(
+			p.windows[0].buffer,
+			rl.Rectangle {
+				x = split_pos,
+				y = 0,
+				width = screen_width - split_pos,
+				height = screen_height,
+			},
+			allocator,
+		)
+
+		new_window.scroll = p.windows[0].scroll
+		new_window.cursor = p.windows[0].cursor
 		new_window.is_focus = false
-        
-        append(&p.windows, new_window)
-        p.current_window = &p.windows[0]  
-    } else if len(p.windows) > 1 {
-        p.windows[1].rect = rl.Rectangle{
-            x = split_pos,
-            y = 0,
-            width = screen_width - split_pos,
-            height = screen_height,
-        }
-    }
-    
-    for &w in p.windows {
-        window_update(&w)
-    }
+
+		append(&p.windows, new_window)
+		p.current_window = &p.windows[0]
+	} else if len(p.windows) > 1 {
+		p.windows[1].rect = rl.Rectangle {
+			x      = split_pos,
+			y      = 0,
+			width  = screen_width - split_pos,
+			height = screen_height,
+		}
+	}
+
+	for &w in p.windows {
+		window_update(&w)
+	}
 }
 
 window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
-    if p.split_type != .NONE {
-        window_remove_split(p)
-    }
-    
-    p.split_type = .HORIZONTAL
-    
-    screen_width := f32(rl.GetScreenWidth())
-    screen_height := f32(rl.GetScreenHeight()) 
-    split_pos := screen_height * 0.5
-    
-    if len(p.windows) > 0 {
-        p.windows[0].rect = rl.Rectangle{
-            x = 0,
-            y = 0,
-            width = screen_width,
-            height = split_pos,
-        }
-    }
-    
-    if len(p.windows) == 1 {
-        new_window := window_init(
-            p.windows[0].buffer,
-            rl.Rectangle{
-                x = 0,
-                y = split_pos,
-                width = screen_width,
-                height = screen_height - split_pos,
-            },
-            allocator,
-        )
-        
-        new_window.scroll = p.windows[0].scroll
-        new_window.cursor = p.windows[0].cursor
+	if p.split_type != .NONE {
+		window_remove_split(p)
+	}
+
+	p.split_type = .HORIZONTAL
+
+	screen_width := f32(rl.GetScreenWidth())
+	screen_height := f32(rl.GetScreenHeight())
+	split_pos := screen_height * 0.5
+
+	if len(p.windows) > 0 {
+		p.windows[0].rect = rl.Rectangle {
+			x      = 0,
+			y      = 0,
+			width  = screen_width,
+			height = split_pos,
+		}
+	}
+
+	if len(p.windows) == 1 {
+		new_window := window_init(
+			p.windows[0].buffer,
+			rl.Rectangle {
+				x = 0,
+				y = split_pos,
+				width = screen_width,
+				height = screen_height - split_pos,
+			},
+			allocator,
+		)
+
+		new_window.scroll = p.windows[0].scroll
+		new_window.cursor = p.windows[0].cursor
 		new_window.is_focus = false
-        
-        append(&p.windows, new_window)
-        p.current_window = &p.windows[0]  
-    } else if len(p.windows) > 1 {
-        p.windows[1].rect = rl.Rectangle{
-            x = 0,
-            y = split_pos,
-            width = screen_width,
-            height = screen_height - split_pos,
-        }
-    }
-    
-    for &w in p.windows {
-        window_update(&w)
-    }
+
+		append(&p.windows, new_window)
+		p.current_window = &p.windows[0]
+	} else if len(p.windows) > 1 {
+		p.windows[1].rect = rl.Rectangle {
+			x      = 0,
+			y      = split_pos,
+			width  = screen_width,
+			height = screen_height - split_pos,
+		}
+	}
+
+	for &w in p.windows {
+		window_update(&w)
+	}
 }
 
 
 window_remove_split :: proc(p: ^Pulse) {
-    if p.split_type == .NONE || len(p.windows) <= 1 {
-        return  
-    }
-    
-    focused_window_index := -1
-    for i := 0; i < len(p.windows); i += 1 {
-        if p.windows[i].is_focus {
-            focused_window_index = i
-            break
-        }
-    }
-    
-    if focused_window_index == -1 {
-        focused_window_index = 0  
-    }
-    
-    p.windows[focused_window_index].rect = rl.Rectangle{
-        x = 0,
-        y = 0,
-        width = f32(rl.GetScreenWidth()),
-        height = f32(rl.GetScreenHeight()),
-    }
-    
-    for i := len(p.windows) - 1; i >= 0; i -= 1 {
-        if i != focused_window_index {
-            ordered_remove(&p.windows, i)
-        }
-    }
-    
-    p.current_window = &p.windows[0]
-    p.split_type = .NONE
-    
-    window_update(p.current_window)
+	if p.split_type == .NONE || len(p.windows) <= 1 {
+		return
+	}
+
+	focused_window_index := -1
+	for i := 0; i < len(p.windows); i += 1 {
+		if p.windows[i].is_focus {
+			focused_window_index = i
+			break
+		}
+	}
+
+	if focused_window_index == -1 {
+		focused_window_index = 0
+	}
+
+	p.windows[focused_window_index].rect = rl.Rectangle {
+		x      = 0,
+		y      = 0,
+		width  = f32(rl.GetScreenWidth()),
+		height = f32(rl.GetScreenHeight()),
+	}
+
+	for i := len(p.windows) - 1; i >= 0; i -= 1 {
+		if i != focused_window_index {
+			ordered_remove(&p.windows, i)
+		}
+	}
+
+	p.current_window = &p.windows[0]
+	p.split_type = .NONE
+
+	window_update(p.current_window)
+}
+
+window_close_current :: proc(p: ^Pulse) {
+	if len(p.windows) <= 1 do return
+
+	current_index := -1
+	for &w, i in p.windows {
+		if &w == p.current_window {
+			current_index += 1
+			break
+		}
+	}
+	if current_index == -1 do return
+
+	// Remove current window.
+	ordered_remove(&p.windows, current_index)
+
+	if len(p.windows) == 1 {
+		p.current_window = &p.windows[0]
+		p.current_window.rect = {
+			x      = 0,
+			y      = 0,
+			width  = f32(rl.GetScreenWidth()),
+			height = f32(rl.GetScreenHeight()),
+		}
+		p.current_window.is_focus = true
+		p.split_type = .NONE
+		window_update(p.current_window)
+	}
 }
 
 window_resize_tree :: proc(p: ^Pulse, new_screen_size: rl.Vector2) {
-    screen_width := new_screen_size.x
-    screen_height := new_screen_size.y
-    
-    if len(p.windows) == 0 {
-        return
-    }
-    
-    if p.split_type == .NONE {
-        if len(p.windows) >= 1 {
-            p.windows[0].rect = rl.Rectangle{
-                x = 0, 
-                y = 0,
-                width = screen_width,
-                height = screen_height,
-            }
-        }
-    } else if p.split_type == .VERTICAL {
-        if len(p.windows) >= 2 {
-            split_pos := screen_width * 0.5  // Maintain 50/50 split.
-            
-            p.windows[0].rect = rl.Rectangle{
-                x = 0,
-                y = 0,
-                width = split_pos,
-                height = screen_height,
-            }
-            
-            p.windows[1].rect = rl.Rectangle{
-                x = split_pos,
-                y = 0,
-                width = screen_width - split_pos,
-                height = screen_height,
-            }
-        }
-    } else if p.split_type == .HORIZONTAL {
-        if len(p.windows) >= 2 {
-            split_pos := screen_height * 0.5  // Same thing here.
-            
-            p.windows[0].rect = rl.Rectangle{
-                x = 0,
-                y = 0,
-                width = screen_width,
-                height = split_pos,
-            }
-            
-            p.windows[1].rect = rl.Rectangle{
-                x = 0,
-                y = split_pos,
-                width = screen_width,
-                height = screen_height - split_pos,
-            }
-        }
-    }
+	screen_width := new_screen_size.x
+	screen_height := new_screen_size.y
+
+	if len(p.windows) == 0 {
+		return
+	}
+
+	if p.split_type == .NONE {
+		if len(p.windows) >= 1 {
+			p.windows[0].rect = rl.Rectangle {
+				x      = 0,
+				y      = 0,
+				width  = screen_width,
+				height = screen_height,
+			}
+		}
+	} else if p.split_type == .VERTICAL {
+		if len(p.windows) >= 2 {
+			split_pos := screen_width * 0.5 // Maintain 50/50 split.
+
+			p.windows[0].rect = rl.Rectangle {
+				x      = 0,
+				y      = 0,
+				width  = split_pos,
+				height = screen_height,
+			}
+
+			p.windows[1].rect = rl.Rectangle {
+				x      = split_pos,
+				y      = 0,
+				width  = screen_width - split_pos,
+				height = screen_height,
+			}
+		}
+	} else if p.split_type == .HORIZONTAL {
+		if len(p.windows) >= 2 {
+			split_pos := screen_height * 0.5 // Same thing here.
+
+			p.windows[0].rect = rl.Rectangle {
+				x      = 0,
+				y      = 0,
+				width  = screen_width,
+				height = split_pos,
+			}
+
+			p.windows[1].rect = rl.Rectangle {
+				x      = 0,
+				y      = split_pos,
+				width  = screen_width,
+				height = screen_height - split_pos,
+			}
+		}
+	}
 }
 
 // This function finds all split edges by analyzing window boundaries.
@@ -418,45 +447,44 @@ find_all_split_edges :: proc(
 
 // Toggle focus between the 2 windows.
 window_switch_focus :: proc(p: ^Pulse) {
-    if p.split_type == .NONE || len(p.windows) != 2 {
-        return
-    }
-    
-    new_focus_index := 1 if p.current_window == &p.windows[0] else 0
-    p.current_window.is_focus = false
-    p.current_window = &p.windows[new_focus_index]
-    p.current_window.is_focus = true
+	if p.split_type == .NONE || len(p.windows) != 2 {
+		return
+	}
+
+	new_focus_index := 1 if p.current_window == &p.windows[0] else 0
+	p.current_window.is_focus = false
+	p.current_window = &p.windows[new_focus_index]
+	p.current_window.is_focus = true
 }
 
 window_focus_left :: proc(p: ^Pulse) {
-    if p.split_type == .VERTICAL && len(p.windows) == 2 {
-        p.current_window.is_focus = false
-        p.current_window = &p.windows[0]
-        p.current_window.is_focus = true
-    }
+	if p.split_type == .VERTICAL && len(p.windows) == 2 {
+		p.current_window.is_focus = false
+		p.current_window = &p.windows[0]
+		p.current_window.is_focus = true
+	}
 }
 
 window_focus_right :: proc(p: ^Pulse) {
-    if p.split_type == .VERTICAL && len(p.windows) == 2 {
-        p.current_window.is_focus = false
-        p.current_window = &p.windows[1]
-        p.current_window.is_focus = true
-    }
+	if p.split_type == .VERTICAL && len(p.windows) == 2 {
+		p.current_window.is_focus = false
+		p.current_window = &p.windows[1]
+		p.current_window.is_focus = true
+	}
 }
 
 window_focus_top :: proc(p: ^Pulse) {
-    if p.split_type == .HORIZONTAL && len(p.windows) == 2 {
-        p.current_window.is_focus = false
-        p.current_window = &p.windows[0]
-        p.current_window.is_focus = true
-    }
+	if p.split_type == .HORIZONTAL && len(p.windows) == 2 {
+		p.current_window.is_focus = false
+		p.current_window = &p.windows[0]
+		p.current_window.is_focus = true
+	}
 }
 
 window_focus_bottom :: proc(p: ^Pulse) {
-    if p.split_type == .HORIZONTAL && len(p.windows) == 2 {
-        p.current_window.is_focus = false
-        p.current_window = &p.windows[1]
-        p.current_window.is_focus = true
-    }
+	if p.split_type == .HORIZONTAL && len(p.windows) == 2 {
+		p.current_window.is_focus = false
+		p.current_window = &p.windows[1]
+		p.current_window.is_focus = true
+	}
 }
-

@@ -271,6 +271,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 // Command handling
 //
 
+// TODO: This function probably needs to get more robust
 execute_command :: proc(p: ^Pulse) {
 	cmd := strings.clone_from_bytes(p.status_line.command_window.buffer.data[:])
 	cmd = strings.trim_space(cmd) // Remove leading/trailing whitespace.
@@ -291,6 +292,8 @@ execute_command :: proc(p: ^Pulse) {
 		window_split_vertical(p)
 	case "split":
 		window_split_horizontal(p)
+	case "close":
+		window_close_current(p)
 	case:
 		fmt.println("Unknown command: %s\n", cmd)
 	}
