@@ -72,6 +72,7 @@ Probably use something like tree-sitter, but how exactly I'm using this from Odi
 ### Internal tools
 - [ ] Some sort of simulation to test the functionalities of the editor (similar to how Jonathan Blow does it in his games).
 - [ ] Some kind of logging after commands were successful (probably at the right corner of the status bar).
+- [ ] More detailed logging at a special buffer.
 
 ### AI
 Interesting...

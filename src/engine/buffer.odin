@@ -590,9 +590,6 @@ buffer_draw :: proc(
 	ctx: Draw_Context,
 	allocator := context.allocator,
 ) {
-	// buffer_draw_scissor_begin(ctx)
-	// defer buffer_draw_scissor_end()
-
 	buffer_draw_visible_lines(window, font, ctx, allocator)
 	buffer_draw_cursor(window, font, ctx)
 }
