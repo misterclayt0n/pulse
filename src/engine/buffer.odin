@@ -3,6 +3,7 @@ package engine
 import "core:mem"
 import "core:os"
 import "core:strings"
+import "core:fmt"
 import "core:unicode/utf8"
 import rl "vendor:raylib"
 
@@ -265,6 +266,9 @@ buffer_delete_to_line_end :: proc(window: ^Window) {
 // REFACTOR: This function takes quite a lot of cost
 buffer_update_line_starts :: proc(window: ^Window) {
 	using window
+	// NOTE: Clamp the cursor position to be within valid bounds.
+	if cursor.pos > len(buffer.data) do cursor.pos = len(buffer.data)
+
 	assert(len(buffer.line_starts) > 0, "Buffer must be have at least one line start")
 	assert(buffer.line_starts[0] == 0, "First line start must be 0")
 

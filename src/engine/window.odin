@@ -1,16 +1,18 @@
 package engine
 
 import "core:fmt"
+import "core:strings"
 import rl "vendor:raylib"
 
 Window :: struct {
-	buffer:   ^Buffer,
-	cursor:   Cursor,
-	rect:     rl.Rectangle,
-	scroll:   rl.Vector2,
-	is_focus: bool,
-	target_x: f32,
-	target_y: f32,
+	buffer:      ^Buffer,
+	cursor:      Cursor,
+	rect:        rl.Rectangle,
+	scroll:      rl.Vector2,
+	is_focus:    bool,
+	target_x:    f32,
+	target_y:    f32,
+	text_offset: f32, // Determines where text rendering starts.
 }
 
 Split_Type :: enum {
@@ -65,7 +67,6 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	line_height := f32(font.size) + font.spacing
 	cursor_world_y := 10 + f32(w.cursor.line) * line_height
 	window_height := w.rect.height
-	margin_y :: 100.0
 
 	// Add margin to document height to create empty space at the bottom.
 	line_count := f32(len(w.buffer.line_starts))
@@ -75,13 +76,13 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	cursor_screen_y := cursor_world_y - w.scroll.y
 	needs_scroll := false
 
-	if cursor_screen_y < margin_y {
+	if cursor_screen_y < MARGIN_Y {
 		// Compute how far the cursor is into the margin area.
-		delta := margin_y - cursor_screen_y
+		delta := MARGIN_Y - cursor_screen_y
 		// Adjust the target relative to the current scroll.
 		w.target_y = max(0, w.scroll.y - delta)
-	} else if cursor_screen_y > (window_height - margin_y) {
-		delta := cursor_screen_y - (window_height - margin_y)
+	} else if cursor_screen_y > (window_height - MARGIN_Y) {
+		delta := cursor_screen_y - (window_height - MARGIN_Y)
 		w.target_y = w.scroll.y + delta
 	}
 
@@ -107,13 +108,12 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	window_width := w.rect.width
 	viewport_left := w.scroll.x
 	viewport_right := viewport_left + window_width
-	margin_x :: 50.0
 
-	if cursor_x < viewport_left + margin_x {
-		w.target_x = cursor_x - margin_x
+	if cursor_x < viewport_left + MARGIN_X {
+		w.target_x = cursor_x - MARGIN_X
 	}
-	if cursor_x > viewport_right - margin_x {
-		w.target_x = cursor_x - (window_width - margin_x)
+	if cursor_x > viewport_right - MARGIN_X {
+		w.target_x = cursor_x - (window_width - MARGIN_X)
 	}
 
 	// Lerp the camera's current position (p.camera.target) torwards the new
@@ -122,42 +122,107 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, SCROLL_SMOOTHNESS)
 }
 
+// 
+// Drawing
+// 
+
 window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	screen_width := i32(w.rect.width)
 	screen_height := i32(w.rect.height)
 	line_height := f32(font.size) + font.spacing
 
-	// Calculate visible lines based on w scroll position..
+	// Calculate visible lines based on scroll position.
 	first_visible_line := int((w.scroll.y - 10) / line_height)
 	last_visible_line := int((w.scroll.y + f32(screen_height) + 10) / line_height)
 	first_visible_line = max(0, first_visible_line)
 	last_visible_line = min(len(w.buffer.line_starts) - 1, last_visible_line)
 
-	// Set up camera to use scroll position but draw text at fixed origin.
+	assert(first_visible_line <= last_visible_line, "Invalid line range")
+	assert(first_visible_line >= 0 && last_visible_line < len(w.buffer.line_starts), "Visible lines out of bounds")
+
+	// Set up camera.
 	camera := rl.Camera2D {
-		offset   = {w.rect.x, w.rect.y}, // Screen position of the window.
-		target   = {w.scroll.x, w.scroll.y}, // Scroll offset in text space.
+		offset   = {w.rect.x, w.rect.y},
+		target   = {w.scroll.x, w.scroll.y},
 		rotation = 0,
 		zoom     = 1,
 	}
+	assert(camera.offset.x == w.rect.x && camera.offset.y == w.rect.y, "Camera offset mismatch")
 
-	// Set scissor to strictly clip to window bounds.
 	rl.BeginScissorMode(i32(w.rect.x), i32(w.rect.y), i32(w.rect.width), i32(w.rect.height))
 	defer rl.EndScissorMode()
 
 	rl.BeginMode2D(camera)
 	defer rl.EndMode2D()
 
+	// Draw line numbers and set text_offset.
+	window_draw_line_numbers(
+		w,
+		font,
+		first_visible_line,
+		last_visible_line,
+		line_height,
+		allocator,
+	)
+	assert(w.text_offset > 0, "Invalid text offset")
+
+	// Draw text content.
 	ctx := Draw_Context {
-		position      = {10, 10},
-		screen_width  = i32(w.rect.width),
+		position      = {w.text_offset, 10}, // Use text_offset set by window_draw_line_numbers.
+		screen_width  = i32(w.rect.width), // Full width, no margin_x subtraction.
 		screen_height = i32(w.rect.height),
 		first_line    = first_visible_line,
 		last_line     = last_visible_line,
 		line_height   = int(line_height),
 	}
 
+	// Draw the actual buffer.
 	buffer_draw(w, font, ctx, allocator)
+}
+
+window_draw_line_numbers :: proc(
+	w: ^Window,
+	font: Font,
+	first_visible_line, last_visible_line: int,
+	line_height: f32,
+	allocator := context.allocator,
+) {
+	// Determine the widest line number width.
+	max_line_num_width: f32 = 0
+	for line in first_visible_line ..= last_visible_line {
+		line_num_str := fmt.tprintf("%d", line + 1)
+		line_num_cstr := strings.clone_to_cstring(line_num_str, allocator)
+		width := rl.MeasureTextEx(font.ray_font, line_num_cstr, f32(font.size), font.spacing).x
+		max_line_num_width = max(max_line_num_width, width)
+		delete(line_num_cstr, allocator)
+	}
+	assert(max_line_num_width >= 0, "Negative line number width")
+
+	// Draw line numbers within margin_x space with additional gap.
+	for line in first_visible_line ..= last_visible_line {
+		y_pos := 10 + f32(line) * line_height
+		line_num_str := fmt.tprintf("%d", line + 1)
+		line_num_cstr := strings.clone_to_cstring(line_num_str, allocator)
+		defer delete(line_num_cstr, allocator)
+
+		num_width := rl.MeasureTextEx(font.ray_font, line_num_cstr, f32(font.size), font.spacing).x
+		x_pos := MARGIN_X - num_width - GAP - 2 // Relative to camera origin.
+		x_pos = max(2, x_pos) // Keep at least 2 pixels from left edge.
+		assert(x_pos >= 0, "Line number x_pos out of bounds")
+
+		rl.DrawTextEx(
+			font.ray_font,
+			line_num_cstr,
+			rl.Vector2{x_pos, y_pos}, // Relative position
+			f32(font.size),
+			font.spacing,
+			rl.GRAY,
+		)
+	}
+
+	// Export text_offset for use in window_draw.
+	w.text_offset = max(max_line_num_width + LINE_NUMBER_PADDING, MARGIN_X)
+	assert(w.text_offset >= MARGIN_X, "Text offset less than margin")
 }
 
 window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {

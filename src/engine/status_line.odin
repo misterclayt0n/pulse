@@ -150,7 +150,7 @@ status_line_log :: proc(s: ^Status_Line, format: string, args: ..any) {
 		delete(s.message, s.allocator)
 	}
 
-	formatted := fmt.tprintf("%s\n", format)
+	formatted := fmt.tprintf("%s\n\n", format)
 	s.message = fmt.tprintf(formatted, ..args)
 	s.message_timestamp = rl.GetTime() + s.message_duration
 }
