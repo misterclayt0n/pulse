@@ -19,6 +19,7 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [ ] Visual mode.
 - [ ] Visual line mode.
 - [ ] Visual block mode (I probably want to develop this the way Zed does it, with multiple cursors).
+- [ ] Comamnd buffer (execute motions like "gg", "gd", etc)
 
 ### Emacs
 Emacs?
