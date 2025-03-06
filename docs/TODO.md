@@ -52,6 +52,7 @@ Also not so sure about this, but generally speaking:
 - [ ] Not exactly UI, but hot reload?
 - [ ] Zooming fonts.
 - [ ] Show empty spaces as dots (similar to how emacs does it).
+- [ ] Line numbers.
 
 ### Fonts
 This is a bit of a pain in my ass, the only font I know that can render basically everything is Noto Sans, but I have to come up with a way to use a given font to render ASCII characters, and Noto Sans to render japanese/chinese/whatever. Or maybe I can just not give much of a fuck...
