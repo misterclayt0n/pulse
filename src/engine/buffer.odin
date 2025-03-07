@@ -698,12 +698,24 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 		cursor.col = 0
 	}
 
-	buffer_update_line_starts(window)
+	// Update line and column after movement.
+	cursor.line = 0
+	for i := 1; i < len(buffer.line_starts); i += 1 {
+		if cursor.pos >= buffer.line_starts[i] {
+			cursor.line = i
+		} else {
+			break
+		}
+	}
+
+	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 
 	// Update preferred col after horizontal movements.
 	if horizontal {
 		cursor.preferred_col = cursor.col
 	}
+
+	buffer_update_line_starts(window)
 }
 
 //
@@ -711,12 +723,18 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 //
 
 buffer_draw :: proc(
+	p: ^Pulse,
 	window: ^Window,
 	font: Font,
 	ctx: Draw_Context,
 	allocator := context.allocator,
 ) {
-	buffer_draw_visible_lines(window, font, ctx, allocator)
+	adjusted_ctx := ctx
+	if window.scroll.y == 0 {
+		adjusted_ctx.first_line = 0
+	}
+
+	buffer_draw_visible_lines(p, window, font, adjusted_ctx, allocator)
 	buffer_draw_cursor(window, font, ctx)
 }
 
@@ -787,42 +805,92 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 	}
 }
 
-// Draws only the visible lines.
 buffer_draw_visible_lines :: proc(
-	window: ^Window,
-	font: Font,
-	ctx: Draw_Context,
-	allocator := context.allocator,
+    p: ^Pulse,
+    window: ^Window,
+    font: Font,
+    ctx: Draw_Context,
+    allocator := context.allocator,
 ) {
-	using window
-	for line in ctx.first_line ..= ctx.last_line {
-		line_start := buffer.line_starts[line]
-		line_end := len(buffer.data)
+    using window
+    selection_active := p.keymap.vim_state.mode == .VISUAL && cursor.sel != cursor.pos
+    sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
+    sel_end := max(cursor.sel, cursor.pos) + 1 if selection_active else 0 // NOTE: We add 1 to include cursor position in selection.
 
-		if line < len(buffer.line_starts) - 1 {
-			// Check if next line starts with a newline.
-			next_line_start := buffer.line_starts[line + 1]
-			if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
-				line_end = next_line_start - 1 // Exclude newline.
-			} else {
-				line_end = next_line_start
-			}
-		}
+    for line in ctx.first_line ..= ctx.last_line {
+        line_start := buffer.line_starts[line]
+        line_end := len(buffer.data)
 
-		// Convert the line slice to a C-string.
-		line_text := buffer.data[line_start:line_end]
-		line_str := strings.clone_to_cstring(string(line_text), allocator)
+        if line < len(buffer.line_starts) - 1 {
+            next_line_start := buffer.line_starts[line + 1]
+            if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
+                line_end = next_line_start - 1 // Exclude newline from text drawing.
+            } else {
+                line_end = next_line_start
+            }
+        }
 
-		y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
-		rl.DrawTextEx(
-			font.ray_font,
-			line_str,
-			rl.Vector2{ctx.position.x, y_pos},
-			f32(font.size),
-			font.spacing,
-			font.color,
-		)
-	}
+        // Calculate line width for text positioning.
+        line_text_for_measure := string(buffer.data[line_start:line_end])
+        line_str_for_measure := strings.clone_to_cstring(line_text_for_measure, allocator)
+        defer delete(line_str_for_measure, allocator)
+        line_width := rl.MeasureTextEx(font.ray_font, line_str_for_measure, f32(font.size), font.spacing).x
+
+        // Highlight selection if it overlaps this line.
+        if selection_active && sel_start < line_end && sel_end > line_start {
+            start_pos := max(sel_start, line_start)
+            end_pos := min(sel_end, line_end)
+
+            x_start := ctx.position.x
+            y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+
+            // Measure text before selection.
+            text_before := buffer.data[line_start:start_pos]
+            before_str := strings.clone_to_cstring(string(text_before), allocator)
+            defer delete(before_str, allocator)
+            x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
+
+            // Measure selected text width.
+            text_selected := buffer.data[start_pos:end_pos]
+            selected_str := strings.clone_to_cstring(string(text_selected), allocator)
+            defer delete(selected_str, allocator)
+            sel_width := rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
+			highlighted_line := f32(font.size) + (font.spacing * 0.9)
+
+            // Draw highlight for selected text.
+            rl.DrawRectangleV(
+                {x_start + x_offset, y_pos},
+                {sel_width, f32(font.size)}, // Use font.size for consistent height.
+                HIGHLIGHT_COLOR,
+            )
+
+            // Extend highlight to end of line if selection includes newline.
+			is_empty_line := line_end - line_start == 0  // Check if line has no visible characters.
+			if line < len(buffer.line_starts) - 1 && sel_end > line_end && is_empty_line {
+                space_width := rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x
+                rl.DrawRectangleV(
+                    {x_start + line_width, y_pos},
+                    {space_width, highlighted_line}, // Match text height.
+                    HIGHLIGHT_COLOR,
+                )
+            }
+        }
+
+        // Draw the line text.
+        y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+        line_text := buffer.data[line_start:line_end]
+        line_str := strings.clone_to_cstring(string(line_text), allocator)
+        defer delete(line_str, allocator)
+
+        rl.DrawTextEx(
+            font.ray_font,
+            line_str,
+            rl.Vector2{ctx.position.x, y_pos},
+            f32(font.size),
+            font.spacing,
+            font.color,
+        )
+    }
 }
 
 //

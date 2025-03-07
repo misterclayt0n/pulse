@@ -72,6 +72,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		// Mode changing.
 		if press_and_repeat(.I) do change_mode(p, .INSERT)
 		if press_and_repeat(.A) do append_right_motion(p)
+		if press_and_repeat(.V) do change_mode(p, .VISUAL)
 
 		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
 		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
@@ -134,6 +135,51 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			using p.keymap.vim_state
 			command_normal = !command_normal
 		}
+
+		// 
+		// Command buffer evaluation.
+		//
+
+		key := rl.GetCharPressed()
+		for key != 0 {
+			append(&p.keymap.vim_state.normal_cmd_buffer, u8(key))
+			key = rl.GetCharPressed()
+		}
+
+		if len(p.keymap.vim_state.normal_cmd_buffer) > 0 {
+			cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], allocator)
+			defer delete(cmd_str)
+
+			// Check and execute the command
+            if is_complete_command(cmd_str) {
+                execute_normal_command(p, cmd_str)
+                clear(&p.keymap.vim_state.normal_cmd_buffer)
+            } else if !is_prefix_of_command(cmd_str) {
+				// NOTE: Here we constantly clear the command buffer array if we cannot find a 
+				// valid command sequence, which include any normal command (h, j, k, l, etc). 
+			    // Maybe some performance considerations should be made about 
+				// this, but for now (06/03/25) I have not seen any visual impacts.
+                clear(&p.keymap.vim_state.normal_cmd_buffer)
+            }
+		}
+
+	case .VISUAL:
+		// Exit to Normal Mode
+		if press_and_repeat(.ESCAPE) {
+			p.keymap.vim_state.mode = .NORMAL
+			p.current_window.cursor.sel = 0  // Reset selection
+		}
+
+		// Movement to extend selection
+		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
+		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(p.current_window, .RIGHT)
+		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(p.current_window, .UP)
+		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(p.current_window, .DOWN)
+		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
+		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
+		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
+		if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
+		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
 
 		// 
 		// Command buffer evaluation.
@@ -337,7 +383,9 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			mode = .COMMAND_NORMAL
 			buffer_move_cursor(p.status_line.command_window, .LEFT)
 		}
-
+	case .VISUAL:
+		p.keymap.vim_state.mode = .VISUAL
+		p.current_window.cursor.sel = p.current_window.cursor.pos // Set selection start.
 	}
 }
 

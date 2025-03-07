@@ -16,7 +16,7 @@ Aside from tasks like that the one above, I don't have that much of a clear visi
 I only have so far some general and simple ideas, so I'm just laying them out here.
 
 ### Vim
-- [ ] Visual mode.
+- [x] Visual mode.
 - [ ] Visual line mode.
 - [ ] Visual block mode (I probably want to develop this the way Zed does it, with multiple cursors).
 - [x] Comamnd buffer (execute motions like "gg", "gd", etc)

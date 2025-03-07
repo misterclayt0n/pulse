@@ -103,7 +103,7 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(len(p.windows) > 0, "No windows to draw")
 	for i := 0; i < len(p.windows); i += 1 {
 		window := &p.windows[i]
-		window_draw(window, p.font, allocator)
+		window_draw(p, window, p.font, allocator)
 	}
 
 	// Find and draw all split edges

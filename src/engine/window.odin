@@ -128,7 +128,7 @@ window_scroll :: proc(w: ^Window, font: Font) {
 // Drawing
 // 
 
-window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
+window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allocator) {
 	screen_width := i32(w.rect.width)
 	screen_height := i32(w.rect.height)
 	line_height := f32(font.size) + font.spacing
@@ -184,7 +184,7 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	}
 
 	// Draw the actual buffer.
-	buffer_draw(w, font, ctx, allocator)
+	buffer_draw(p, w, font, ctx, allocator)
 }
 
 window_draw_line_numbers :: proc(
