@@ -103,6 +103,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.SEMICOLON) do change_mode(p, .COMMAND)
 			if press_and_repeat(.FOUR) do buffer_move_cursor(p.current_window, .LINE_END)
+			if press_and_repeat(.G) do buffer_move_cursor(p.current_window, .FILE_END)
 		}
 
 		if ctrl_pressed {

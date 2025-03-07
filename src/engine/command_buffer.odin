@@ -4,7 +4,11 @@ import "core:strings"
 
 // NOTE: Leader key is hard coded as space.
 Known_Commands :: []string{ 
-	"gg", "gd", "dd", "yy",
+	"gg", // TODO: Top of the buffer.
+	"gd", // TODO: Go to definition 
+	"dd", // TODO: Delete line.
+	"cc", // TODO: Change line.
+	"yy", // TODO: Yank line.
 	" w", // <leader>w - save file
 }
 
@@ -27,7 +31,12 @@ is_prefix_of_command :: proc(cmd: string) -> bool {
 execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 	switch cmd {
 	case "gg":
-		status_line_log(&p.status_line, "NOT IMPLEMENTED")
+		buffer_move_cursor(p.current_window, .FILE_BEGINNING)
+	case "dd":
+		buffer_delete_line(p.current_window)
+	case "cc":
+		buffer_change_line(p.current_window)
+		change_mode(p, .INSERT)
 	case " w":
 		status_line_log(&p.status_line, "Saving file from leader w")
 	}

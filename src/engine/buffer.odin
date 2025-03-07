@@ -44,6 +44,8 @@ Cursor_Movement :: enum {
 	WORD_RIGHT,
 	WORD_END,
 	FIRST_NON_BLANK,
+	FILE_BEGINNING,
+	FILE_END,
 	// TODO: A lot more
 }
 
@@ -232,6 +234,96 @@ buffer_delete_word :: proc(window: ^Window) {
 	cursor.pos = delete_start
 	buffer.dirty = true
 	buffer_update_line_starts(window)
+}
+
+// FIX: While at last line, should just delete the line and move up.
+buffer_delete_line :: proc(window: ^Window) {
+	using window
+	if len(buffer.line_starts) == 0 do return // // Buffer empty, nothing to delete.
+
+	current_line := cursor.line
+	if current_line >= len(buffer.line_starts) {
+		current_line = len(buffer.line_starts) - 1 // Clamp to valid line.
+	}
+	assert(current_line >= 0 && current_line < len(buffer.line_starts), "Current line index out of bounds")
+
+	start_pos := buffer.line_starts[current_line]
+	end_pos := len(buffer.data)
+	if current_line < len(buffer.line_starts) - 1 {
+		end_pos = buffer.line_starts[current_line + 1] // Include newline.
+	} else if current_line > 0 && current_line == len(buffer.line_starts) - 1 {
+		// Last line: include the preceding newline if it exists.
+		start_pos = buffer.line_starts[current_line] - 1 
+		assert(buffer.data[start_pos] == '\n', "Expected newline before last line")
+	}
+
+	// Assert deletion range validity.
+	assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of buffer bounds")
+	assert(end_pos >= start_pos && end_pos <= len(buffer.data), "end_pos invalid relative to start_pos or buffer")
+
+	old_len := len(buffer.data)
+	copy(buffer.data[start_pos:], buffer.data[end_pos:])
+	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
+	buffer.dirty = true
+	buffer_update_line_starts(window)
+
+	assert(len(buffer.data) == old_len - (end_pos - start_pos), "Buffer length mismatch after deletion")
+
+	// Adjust cursor position.
+	if len(buffer.line_starts) == 0 {
+		cursor.line = 0
+        cursor.pos = 0
+        cursor.col = 0
+	} else if current_line < len(buffer.line_starts) {
+		cursor.line = current_line
+        cursor.pos = buffer.line_starts[current_line]
+        cursor.col = 0
+	} else {
+		cursor.line = len(buffer.line_starts) - 1
+        cursor.pos = buffer.line_starts[len(buffer.line_starts) - 1]
+        cursor.col = 0
+	}
+
+	// Post-deletion cursor assertions.
+    assert(cursor.line >= 0 && cursor.line < len(buffer.line_starts), "Cursor line out of bounds")
+    assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of buffer bounds")
+    assert(cursor.pos == buffer.line_starts[cursor.line], "Cursor position does not match line start")
+}
+
+// Works just like buffer_delete_line, but without cursor position adjustments
+buffer_change_line :: proc(window: ^Window) {
+	using window
+	current_line := cursor.line
+	if len(buffer.line_starts) == 0 do return // // Buffer empty, nothing to delete.
+
+	assert(current_line >= 0 && current_line < len(buffer.line_starts), "Current line out of bounds")
+
+	start_pos := buffer.line_starts[current_line]
+	assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of bounds")
+
+	end_pos := len(buffer.data)
+	if current_line < len(buffer.line_starts) - 1 {
+		end_pos = buffer.line_starts[current_line + 1] - 1 // Exclude newline.
+	}
+	assert(end_pos >= start_pos && end_pos <= len(buffer.data), "end_pos invalid")
+
+	// Delete line content.
+	old_len := len(buffer.data)
+	copy(buffer.data[start_pos:], buffer.data[end_pos:])
+	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
+	assert(len(buffer.data) == old_len - (end_pos - start_pos), "Buffer resize mismatch")
+
+	buffer.dirty = true
+	buffer_update_line_starts(window)
+
+	// Verify line_starts integrity.
+    assert(len(buffer.line_starts) > 0, "Line starts should not be empty after update")
+    assert(buffer.line_starts[0] == 0, "First line start should be 0")
+
+	cursor.pos = buffer.line_starts[current_line]
+	cursor.col = 0
+	assert(cursor.pos == buffer.line_starts[current_line], "Cursor position mismatch")
+    assert(cursor.col == 0, "Cursor column not reset")
 }
 
 buffer_delete_to_line_end :: proc(window: ^Window) {
@@ -573,6 +665,16 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 
 			cursor.pos = new_pos
 		}
+
+	case .FILE_BEGINNING:
+		cursor.line = 0
+		cursor.pos = buffer.line_starts[0]
+		cursor.col = 0
+	case .FILE_END:
+		last_line := len(buffer.line_starts) - 1
+		cursor.line = last_line
+		cursor.pos = buffer.line_starts[last_line]
+		cursor.col = 0
 	}
 
 	buffer_update_line_starts(window)
