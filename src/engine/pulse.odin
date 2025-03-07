@@ -8,7 +8,10 @@ import rl "vendor:raylib"
 // Sanity checks.
 // 
 
-#assert(DEFAULT_FONT_SIZE >= MIN_FONT_SIZE && DEFAULT_FONT_SIZE <= MAX_FONT_SIZE, "Default font size out of range")
+#assert(
+	DEFAULT_FONT_SIZE >= MIN_FONT_SIZE && DEFAULT_FONT_SIZE <= MAX_FONT_SIZE,
+	"Default font size out of range",
+)
 #assert(MIN_FONT_SIZE > 0, "Minimum font size must be positive")
 #assert(MAX_FONT_SIZE > MIN_FONT_SIZE, "Max font size must be greater than minimum")
 
@@ -29,7 +32,7 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	assert(buffer != nil, "Buffer allocation failed")
 	buffer^ = buffer_init(allocator)
 
-	font := load_font_with_codepoints(font_path, DEFAULT_FONT_SIZE, TEXT_COLOR , allocator) // Default font.
+	font := load_font_with_codepoints(font_path, DEFAULT_FONT_SIZE, TEXT_COLOR, allocator) // Default font.
 	assert(font.size == DEFAULT_FONT_SIZE, "Invalid font size")
 
 	// Create initial window that takes up entire screen.
@@ -78,8 +81,13 @@ pulse_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	// Update all windows.
 	for &w in p.windows {
 		assert(&w != nil, "Encountered nil window in windows array")
-		window_update(&w)
-		if w.is_focus do window_scroll(&w, p.font)
+
+		buffer_clamp_cursor_to_valid_range(&w)
+		if w.is_focus {
+			buffer_clamp_cursor_to_valid_range(&w)
+			window_update(&w) // Recompute line_starts/cursor.line only here
+			window_scroll(&w, p.font)
+		}
 	}
 }
 
@@ -89,7 +97,7 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(screen_width > 0, "Invalid screen width")
 	assert(screen_height > 0, "Invalid screen height")
 
-	rl.ClearBackground(BACKGROUND_COLOR )
+	rl.ClearBackground(BACKGROUND_COLOR)
 
 	// Draw all windows.
 	assert(len(p.windows) > 0, "No windows to draw")
@@ -105,9 +113,15 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	find_all_split_edges(p.windows, &edges, allocator)
 
 	for edge in edges {
-		assert(edge.start.x >= 0 && edge.start.x <= f32(screen_width), "Edge start x out of bounds")
+		assert(
+			edge.start.x >= 0 && edge.start.x <= f32(screen_width),
+			"Edge start x out of bounds",
+		)
 		assert(edge.end.x >= 0 && edge.end.x <= f32(screen_width), "Edge end x out of bounds")
-		assert(edge.start.y >= 0 && edge.start.y <= f32(screen_height), "Edge start y out of bounds")
+		assert(
+			edge.start.y >= 0 && edge.start.y <= f32(screen_height),
+			"Edge start y out of bounds",
+		)
 		assert(edge.end.y >= 0 && edge.end.y <= f32(screen_height), "Edge end y out of bounds")
 
 		rl.DrawLineEx(edge.start, edge.end, 1.0, SPLIT_COLOR)

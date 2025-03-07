@@ -1,9 +1,9 @@
 package engine
 
+import "core:fmt"
 import "core:mem"
 import "core:os"
 import "core:strings"
-import "core:fmt"
 import "core:unicode/utf8"
 import rl "vendor:raylib"
 
@@ -245,7 +245,10 @@ buffer_delete_line :: proc(window: ^Window) {
 	if current_line >= len(buffer.line_starts) {
 		current_line = len(buffer.line_starts) - 1 // Clamp to valid line.
 	}
-	assert(current_line >= 0 && current_line < len(buffer.line_starts), "Current line index out of bounds")
+	assert(
+		current_line >= 0 && current_line < len(buffer.line_starts),
+		"Current line index out of bounds",
+	)
 
 	start_pos := buffer.line_starts[current_line]
 	end_pos := len(buffer.data)
@@ -253,13 +256,16 @@ buffer_delete_line :: proc(window: ^Window) {
 		end_pos = buffer.line_starts[current_line + 1] // Include newline.
 	} else if current_line > 0 && current_line == len(buffer.line_starts) - 1 {
 		// Last line: include the preceding newline if it exists.
-		start_pos = buffer.line_starts[current_line] - 1 
+		start_pos = buffer.line_starts[current_line] - 1
 		assert(buffer.data[start_pos] == '\n', "Expected newline before last line")
 	}
 
 	// Assert deletion range validity.
 	assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of buffer bounds")
-	assert(end_pos >= start_pos && end_pos <= len(buffer.data), "end_pos invalid relative to start_pos or buffer")
+	assert(
+		end_pos >= start_pos && end_pos <= len(buffer.data),
+		"end_pos invalid relative to start_pos or buffer",
+	)
 
 	old_len := len(buffer.data)
 	copy(buffer.data[start_pos:], buffer.data[end_pos:])
@@ -267,27 +273,36 @@ buffer_delete_line :: proc(window: ^Window) {
 	buffer.dirty = true
 	buffer_update_line_starts(window)
 
-	assert(len(buffer.data) == old_len - (end_pos - start_pos), "Buffer length mismatch after deletion")
+	assert(
+		len(buffer.data) == old_len - (end_pos - start_pos),
+		"Buffer length mismatch after deletion",
+	)
 
 	// Adjust cursor position.
 	if len(buffer.line_starts) == 0 {
 		cursor.line = 0
-        cursor.pos = 0
-        cursor.col = 0
+		cursor.pos = 0
+		cursor.col = 0
 	} else if current_line < len(buffer.line_starts) {
 		cursor.line = current_line
-        cursor.pos = buffer.line_starts[current_line]
-        cursor.col = 0
+		cursor.pos = buffer.line_starts[current_line]
+		cursor.col = 0
 	} else {
 		cursor.line = len(buffer.line_starts) - 1
-        cursor.pos = buffer.line_starts[len(buffer.line_starts) - 1]
-        cursor.col = 0
+		cursor.pos = buffer.line_starts[len(buffer.line_starts) - 1]
+		cursor.col = 0
 	}
 
 	// Post-deletion cursor assertions.
-    assert(cursor.line >= 0 && cursor.line < len(buffer.line_starts), "Cursor line out of bounds")
-    assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of buffer bounds")
-    assert(cursor.pos == buffer.line_starts[cursor.line], "Cursor position does not match line start")
+	assert(cursor.line >= 0 && cursor.line < len(buffer.line_starts), "Cursor line out of bounds")
+	assert(
+		cursor.pos >= 0 && cursor.pos <= len(buffer.data),
+		"Cursor position out of buffer bounds",
+	)
+	assert(
+		cursor.pos == buffer.line_starts[cursor.line],
+		"Cursor position does not match line start",
+	)
 }
 
 // Works just like buffer_delete_line, but without cursor position adjustments
@@ -296,7 +311,10 @@ buffer_change_line :: proc(window: ^Window) {
 	current_line := cursor.line
 	if len(buffer.line_starts) == 0 do return // // Buffer empty, nothing to delete.
 
-	assert(current_line >= 0 && current_line < len(buffer.line_starts), "Current line out of bounds")
+	assert(
+		current_line >= 0 && current_line < len(buffer.line_starts),
+		"Current line out of bounds",
+	)
 
 	start_pos := buffer.line_starts[current_line]
 	assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of bounds")
@@ -317,13 +335,13 @@ buffer_change_line :: proc(window: ^Window) {
 	buffer_update_line_starts(window)
 
 	// Verify line_starts integrity.
-    assert(len(buffer.line_starts) > 0, "Line starts should not be empty after update")
-    assert(buffer.line_starts[0] == 0, "First line start should be 0")
+	assert(len(buffer.line_starts) > 0, "Line starts should not be empty after update")
+	assert(buffer.line_starts[0] == 0, "First line start should be 0")
 
 	cursor.pos = buffer.line_starts[current_line]
 	cursor.col = 0
 	assert(cursor.pos == buffer.line_starts[current_line], "Cursor position mismatch")
-    assert(cursor.col == 0, "Cursor column not reset")
+	assert(cursor.col == 0, "Cursor column not reset")
 }
 
 buffer_delete_to_line_end :: proc(window: ^Window) {
@@ -387,7 +405,10 @@ buffer_update_line_starts :: proc(window: ^Window) {
 	}
 
 	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
-	assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of bounds after line update")
+	assert(
+		cursor.pos >= 0 && cursor.pos <= len(buffer.data),
+		"Cursor position out of bounds after line update",
+	)
 }
 
 //
@@ -715,6 +736,10 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 		line_start <= cursor_pos_clamped,
 		"Line start index must be less or equal to clamped cursor position",
 	)
+	assert(
+		line_start >= 0 && line_start <= len(buffer.data),
+		"line_start out of range in buffer_draw_cursor",
+	)
 
 	line_text := buffer.data[line_start:cursor_pos_clamped]
 	assert(len(line_text) >= 0, "Line text cannot be negative")
@@ -819,4 +844,41 @@ buffer_line_length :: proc(buffer: ^Buffer, line: int) -> int {
 	}
 
 	return end - start
+}
+
+// This function prevents the cursor from going out of bounds when the 
+// underlying buffer changes (e.g. lines were inserted/deleted) and line_starts 
+// was recalculated. If cursor.pos or cursor.line becomes invalid, we move them 
+// just enough to bring them back in range.
+buffer_clamp_cursor_to_valid_range :: proc(w: ^Window) {
+	assert(w.buffer != nil, "Window has nil buffer pointer")
+	assert(len(w.buffer.line_starts) > 0, "Buffer has no line starts when clamping cursor")
+	assert(w.buffer.line_starts[0] == 0, "First line_start must always be 0")
+
+	if w.cursor.line >= len(w.buffer.line_starts) {
+		w.cursor.line = len(w.buffer.line_starts) - 1
+	}
+	if w.cursor.line < 0 { 	// Just in case.
+		w.cursor.line = 0
+	}
+
+	// The new line_start in the updated buffer.
+	line_start := w.buffer.line_starts[w.cursor.line]
+	assert(
+		line_start <= len(w.buffer.data),
+		"line_start is out of range for the current buffer length",
+	)
+
+	// If the cursor’s pos is before line_start, clamp it up.
+	if w.cursor.pos < line_start {
+		w.cursor.pos = line_start
+	}
+
+	// Also clamp pos to end of buffer.
+	if w.cursor.pos > len(w.buffer.data) {
+		w.cursor.pos = len(w.buffer.data)
+	}
+
+	assert(w.cursor.pos >= line_start, "cursor.pos still < line_start after clamp")
+	assert(w.cursor.pos <= len(w.buffer.data), "cursor.pos still > buffer length after clamp")
 }

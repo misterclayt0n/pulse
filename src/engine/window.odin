@@ -34,7 +34,7 @@ window_init :: proc(
 	assert(buffer != nil, "Buffer must be valid")
 	assert(rect.width >= 0 && rect.height >= 0, "Window dimensions must be non-negative")
 
-	return Window {
+	new_window := Window {
 		buffer = buffer,
 		rect = rect,
 		scroll = {0, 0},
@@ -52,6 +52,8 @@ window_init :: proc(
 			blink         = false, // FIX: This shit.
 		},
 	}
+
+	return new_window
 }
 
 window_update :: proc(w: ^Window) {
