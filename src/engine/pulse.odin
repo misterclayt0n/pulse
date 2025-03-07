@@ -78,7 +78,7 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	}
 }
 
-pulse_update :: proc(p: ^Pulse) {
+pulse_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	current_screen_size: rl.Vector2 = {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 	assert(current_screen_size.x > 0, "Screen width must be greater than 0")
 	assert(current_screen_size.y > 0, "Screen height must be greater than 0")
@@ -89,7 +89,7 @@ pulse_update :: proc(p: ^Pulse) {
 		assert(p.screen_size == current_screen_size, "Screen size update failed")
 	}
 
-	keymap_update(p)
+	keymap_update(p, allocator)
 	status_line_update(p)
 
 	// Update all windows.

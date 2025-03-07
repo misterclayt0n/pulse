@@ -41,7 +41,7 @@ main :: proc() {
 	for !rl.WindowShouldClose() && !pulse.should_close {
 		rl.BeginDrawing()
 		defer rl.EndDrawing()
-		eg.pulse_update(&pulse)
+		eg.pulse_update(&pulse, allocator)
 		eg.pulse_draw(&pulse, allocator)
 	}
 }

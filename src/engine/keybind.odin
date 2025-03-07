@@ -17,7 +17,7 @@ keymap_init :: proc(mode: Keymap_Mode, allocator := context.allocator) -> Keymap
 	return Keymap{mode = .VIM, vim_state = vim_state_init(allocator)}
 }
 
-keymap_update :: proc(p: ^Pulse) {
+keymap_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	vim_state_update(p)
 }
 
@@ -34,10 +34,11 @@ Vim_Mode :: enum {
 }
 
 Vim_State :: struct {
-	commands:       [dynamic]u8, // Stores commands like "dd".
-	last_command:   string, // For repeating commands.
-	mode:           Vim_Mode,
-	command_normal: bool, // Indicates whether command normal mode is active or not.
+	commands:          [dynamic]u8,
+	last_command:      string, // For repeating commands.
+	mode:              Vim_Mode,
+	command_normal:    bool, // Indicates whether command normal mode is active or not.
+	normal_cmd_buffer: [dynamic]u8, // Stores commands like "dd".
 }
 
 vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
@@ -47,6 +48,7 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 		last_command   = "",
 		mode           = .NORMAL,
 		command_normal = false,
+		normal_cmd_buffer = make([dynamic]u8, 0, 16, allocator) // Should never really pass 16 len.
 	}
 }
 
@@ -130,6 +132,33 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.F2) {
 			using p.keymap.vim_state
 			command_normal = !command_normal
+		}
+
+		// 
+		// Command buffer evaluation.
+		//
+
+		key := rl.GetCharPressed()
+		for key != 0 {
+			append(&p.keymap.vim_state.normal_cmd_buffer, u8(key))
+			key = rl.GetCharPressed()
+		}
+
+		if len(p.keymap.vim_state.normal_cmd_buffer) > 0 {
+			cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], allocator)
+			defer delete(cmd_str)
+
+			// Check and execute the command
+            if is_complete_command(cmd_str) {
+                execute_normal_command(p, cmd_str)
+                clear(&p.keymap.vim_state.normal_cmd_buffer)
+            } else if !is_prefix_of_command(cmd_str) {
+				// NOTE: Here we constantly clear the command buffer array if we cannot find a 
+				// valid command sequence, which include any normal command (h, j, k, l, etc). 
+			    // Maybe some performance considerations should be made about 
+				// this, but for now (06/03/25) I have not seen any visual impacts.
+                clear(&p.keymap.vim_state.normal_cmd_buffer)
+            }
 		}
 
 	case .INSERT:
@@ -268,42 +297,6 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			change_mode(p, .COMMAND)
 		}
-	}
-}
-
-//
-// Command handling
-//
-
-// TODO: This function probably needs to get more robust
-execute_command :: proc(p: ^Pulse) {
-	cmd := strings.clone_from_bytes(p.status_line.command_window.buffer.data[:])
-	cmd = strings.trim_space(cmd) // Remove leading/trailing whitespace.
-	defer delete(cmd)
-
-	// Handle different commands.
-	switch cmd {
-	case "w":
-		// TODO: Input filename here.
-        status_line_log(&p.status_line, "File saved successfully") 
-	case "q":
-		// TODO: This should probably close the buffer/window, not the entire editor probably.
-		p.should_close = true
-	case "wq":
-		// TODO: Input filename here.
-		status_line_log(&p.status_line, "Saved file sucessfully")
-		p.should_close = true
-	case "vsplit":
-		status_line_log(&p.status_line, "Vertical split")
-		window_split_vertical(p)
-	case "split":
-		status_line_log(&p.status_line, "Horizontal split")
-		window_split_horizontal(p)
-	case "close":
-		status_line_log(&p.status_line, "Split closed")
-		window_close_current(p)
-	case:
-		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}
 }
 

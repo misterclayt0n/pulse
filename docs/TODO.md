@@ -32,6 +32,7 @@ Emacs?
 - [ ] Search.
 - [ ] Substitute (probably like Emacs as well).
 - [ ] Tab handling - Will probably just treat tabs as spaces or something? Is this the easiest way to deal with them?
+- [ ] Drag and drop a file into the editor to open it.
 
 ### Windows
 01/03/25: I'm not so clear as well as how the window management on this editor will look like. I have considered something simple as Focus, only allowing for one vertical split, since I find that is really the only split I do, but would not hurt (and maybe even be fun) to implement more complex window behavior, I do know however:

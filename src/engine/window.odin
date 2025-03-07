@@ -137,6 +137,11 @@ window_draw :: proc(w: ^Window, font: Font, allocator := context.allocator) {
 	first_visible_line = max(0, first_visible_line)
 	last_visible_line = min(len(w.buffer.line_starts) - 1, last_visible_line)
 
+	if first_visible_line > last_visible_line {
+		first_visible_line = 0
+		last_visible_line = max(0, len(w.buffer.line_starts) - 1) 
+	}
+
 	assert(first_visible_line <= last_visible_line, "Invalid line range")
 	assert(first_visible_line >= 0 && last_visible_line < len(w.buffer.line_starts), "Visible lines out of bounds")
 
