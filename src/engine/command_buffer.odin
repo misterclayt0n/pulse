@@ -2,7 +2,11 @@ package engine
 
 import "core:strings"
 
-Known_Commands :: []string{"gg", "gd", "dd", "yy" }
+// NOTE: Leader key is hard coded as space.
+Known_Commands :: []string{ 
+	"gg", "gd", "dd", "yy",
+	" w", // <leader>w - save file
+}
 
 is_complete_command :: proc(cmd: string) -> bool {
 	for known in Known_Commands {
@@ -24,6 +28,8 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 	switch cmd {
 	case "gg":
 		status_line_log(&p.status_line, "NOT IMPLEMENTED")
+	case " w":
+		status_line_log(&p.status_line, "Saving file from leader w")
 	}
 }
 

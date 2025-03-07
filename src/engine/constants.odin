@@ -1,0 +1,17 @@
+package engine
+
+import rl "vendor:raylib"
+
+BACKGROUND_COLOR :: rl.Color{28, 28, 28, 255}
+TEXT_COLOR :: rl.Color{235, 219, 178, 255}
+SCROLL_SMOOTHNESS :: 0.2
+SPLIT_COLOR :: rl.Color{60, 60, 60, 255}
+DEFAULT_FONT_SIZE :: 25
+MIN_FONT_SIZE :: 10
+MAX_FONT_SIZE :: 100
+MESSAGE_DURATION :: 2.0
+MARGIN_Y :: 100.0
+MARGIN_X :: 50.0
+LINE_NUMBER_PADDING :: 5.0
+GAP :: 30.0 // Additional gap between line numbers and text
+
