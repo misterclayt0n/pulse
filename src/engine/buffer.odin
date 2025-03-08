@@ -373,6 +373,36 @@ buffer_delete_to_line_end :: proc(window: ^Window) {
 	buffer_update_line_starts(window)
 }
 
+buffer_delete_selection :: proc(window: ^Window) {
+	using window
+	assert(cursor.sel >= 0 && cursor.sel <= len(buffer.data), "cursor.sel out of bounds")
+    assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "cursor.pos out of bounds")
+
+	if cursor.sel == cursor.pos do return // No selection, nothing to delete.
+
+	start := min(cursor.sel, cursor.pos)
+	end := max(cursor.sel, cursor.pos) + 1 // Include the character at max position.
+
+	assert(start <= end, "Selection start must be <= end")
+
+	if end > start {
+		if end > len(buffer.data) do end = len(buffer.data)
+		assert(end <= len(buffer.data), "end clamped incorrectly")
+
+		old_len := len(buffer.data)
+		copy(buffer.data[start:], buffer.data[end:])
+		resize(&buffer.data, len(buffer.data) - (end - start))
+		assert(len(buffer.data) == old_len - (end - start), "Buffer resize failed")
+
+		cursor.pos = start
+		buffer.dirty = true
+		buffer_update_line_starts(window)
+	}
+
+	cursor.sel = cursor.pos
+	assert(cursor.sel == cursor.pos, "Selection not reset")
+}
+
 // REFACTOR: This function takes quite a lot of cost
 buffer_update_line_starts :: proc(window: ^Window) {
 	using window
@@ -813,10 +843,27 @@ buffer_draw_visible_lines :: proc(
     allocator := context.allocator,
 ) {
     using window
+	// Assert buffer integrity.
+	assert(buffer.data != nil, "Buffer data must not be nil")
+    assert(len(buffer.line_starts) > 0, "Buffer must have at least one line start")
+
+	// Assert drawing context.
+	assert(ctx.first_line >= 0, "First line must be non-negative")
+    assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
+    assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
+
     selection_active := p.keymap.vim_state.mode == .VISUAL && cursor.sel != cursor.pos
     sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
-    sel_end := max(cursor.sel, cursor.pos) + 1 if selection_active else 0 // NOTE: We add 1 to include cursor position in selection.
+    sel_end := max(cursor.sel, cursor.pos) + (cursor.pos < len(buffer.data) ? 1 : 0) if selection_active else 0
 
+	// Validate selection indices when active.
+    if selection_active {
+        assert(sel_start >= 0 && sel_start <= len(buffer.data), "Selection start out of bounds")
+        assert(sel_end <= len(buffer.data), "Selection end out of bounds")
+        assert(sel_start <= sel_end, "Selection start must be <= end")
+    }
+
+	// Handle non-last lines.
     for line in ctx.first_line ..= ctx.last_line {
         line_start := buffer.line_starts[line]
         line_end := len(buffer.data)
@@ -829,6 +876,10 @@ buffer_draw_visible_lines :: proc(
                 line_end = next_line_start
             }
         }
+
+		// Validate line bounds.
+        assert(line_start >= 0 && line_start <= len(buffer.data), "Line start out of bounds")
+        assert(line_end >= line_start && line_end <= len(buffer.data), "Line end out of bounds")
 
         // Calculate line width for text positioning.
         line_text_for_measure := string(buffer.data[line_start:line_end])

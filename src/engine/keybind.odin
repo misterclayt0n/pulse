@@ -164,6 +164,8 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 
 	case .VISUAL:
+		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+
 		// Exit to Normal Mode
 		if press_and_repeat(.ESCAPE) {
 			p.keymap.vim_state.mode = .NORMAL
@@ -180,6 +182,24 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
 		if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
 		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
+		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
+
+		if shift_pressed {
+			if press_and_repeat(.FOUR) do buffer_move_cursor(p.current_window, .LINE_END)
+			if press_and_repeat(.MINUS) do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+			if press_and_repeat(.G) do buffer_move_cursor(p.current_window, .FILE_END)
+		}
+
+		// Selection operations.
+		if press_and_repeat(.D) {
+			buffer_delete_selection(p.current_window)
+			change_mode(p, .NORMAL)
+		}
+
+		if press_and_repeat(.C) {
+			buffer_delete_selection(p.current_window)
+			change_mode(p, .INSERT)
+		}
 
 		// 
 		// Command buffer evaluation.
@@ -361,11 +381,11 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			buffer_move_cursor(p.current_window, .LEFT)
 		}
 
-		if mode == .COMMAND {
+		if mode == .COMMAND || mode == .VISUAL {
 			mode = .NORMAL
 		}
 	case .INSERT:
-		if mode == .NORMAL do mode = .INSERT
+		mode = .INSERT
 	case .COMMAND:
 		if mode == .NORMAL {
 			status_line_clear_message(&p.status_line)
