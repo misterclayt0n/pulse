@@ -126,7 +126,7 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 	cursor.pos += len(text_bytes)
 	buffer_mark_dirty(buffer)
 
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, offset)
 }
 
 buffer_insert_char :: proc(window: ^Window, char: rune) {
@@ -159,7 +159,7 @@ buffer_insert_char :: proc(window: ^Window, char: rune) {
 	buffer_mark_dirty(buffer)
 	assert(len(buffer.data) >= old_len + n_bytes, "Insertion failed to grow buffer")
 
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, offset)
 }
 
 buffer_delete_char :: proc(window: ^Window) {
@@ -180,7 +180,7 @@ buffer_delete_char :: proc(window: ^Window) {
 	buffer_mark_dirty(buffer)
 	assert(len(buffer.data) == old_len - n_bytes, "Deletion size mismatched")
 
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, start_index)
 }
 
 buffer_delete_forward_char :: proc(window: ^Window) {
@@ -195,7 +195,7 @@ buffer_delete_forward_char :: proc(window: ^Window) {
 	resize(&buffer.data, len(buffer.data) - n_bytes)
 
 	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, cursor.pos)
 }
 
 buffer_delete_word :: proc(window: ^Window) {
@@ -237,7 +237,7 @@ buffer_delete_word :: proc(window: ^Window) {
 	resize(&buffer.data, len(buffer.data) - delete_size)
 	cursor.pos = delete_start
 	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, delete_start)
 }
 
 // FIX: While at last line, should just delete the line and move up.
@@ -275,7 +275,7 @@ buffer_delete_line :: proc(window: ^Window) {
 	copy(buffer.data[start_pos:], buffer.data[end_pos:])
 	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
 	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, start_pos)
 
 	assert(
 		len(buffer.data) == old_len - (end_pos - start_pos),
@@ -336,7 +336,7 @@ buffer_change_line :: proc(window: ^Window) {
 	assert(len(buffer.data) == old_len - (end_pos - start_pos), "Buffer resize mismatch")
 
 	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, start_pos)
 
 	// Verify line_starts integrity.
 	assert(len(buffer.line_starts) > 0, "Line starts should not be empty after update")
@@ -374,7 +374,7 @@ buffer_delete_to_line_end :: proc(window: ^Window) {
 	resize(&buffer.data, len(buffer.data) - delete_count)
 	cursor.pos = cursor_pos
 	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window)
+	buffer_update_line_starts(window, cursor_pos)
 }
 
 buffer_delete_selection :: proc(window: ^Window) {
@@ -400,7 +400,7 @@ buffer_delete_selection :: proc(window: ^Window) {
 
 		cursor.pos = start
 		buffer_mark_dirty(buffer)
-		buffer_update_line_starts(window)
+		buffer_update_line_starts(window, start)
 		
 		assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of bounds")
 		assert(len(buffer.line_starts) > 0, "Line starts must not be empty")
@@ -415,55 +415,68 @@ buffer_delete_selection :: proc(window: ^Window) {
 // I probably need to update only the lines that need updating to fix this shit.
 // Currently it updates the lines of the entire buffer after every edit, no matter how simple it is.
 // NOTE: I could also potentially not care that much about this behavior...
-buffer_update_line_starts :: proc(window: ^Window) {
+buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
 	using window
-	// NOTE: Clamp the cursor position to be within valid bounds.
-	if cursor.pos > len(buffer.data) do cursor.pos = len(buffer.data)
 
-	assert(len(buffer.line_starts) > 0, "Buffer must be have at least one line start")
-	assert(buffer.line_starts[0] == 0, "First line start must be 0")
+    // Clamp the edit position to the current buffer length.
+    clamped_edit_pos := min(edit_pos, len(buffer.data))
 
-	for i := 1; i < len(buffer.line_starts); i += 1 {
-		assert(
-			buffer.line_starts[i] > buffer.line_starts[i - 1],
-			"Line start indices must be strictly increasing",
-		)
-	}
+    // Find the line containing the edit position (using binary search).
+    low := 0
+    high := len(buffer.line_starts) - 1
+    start_line := 0
 
-	// Clear existing line starts and add first line
-	clear(&buffer.line_starts)
-	append(&buffer.line_starts, 0) // First line always start at 0.
+    for low <= high {
+        mid := (low + high) // 2
+        if buffer.line_starts[mid] <= clamped_edit_pos {
+            start_line = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
 
-	for i := 0; i < len(buffer.data); i += 1 {
-		if buffer.data[i] == '\n' do append(&buffer.line_starts, i + 1)
-	}
+    start_pos := buffer.line_starts[start_line]
 
-	// Update cursor line and col.
-	cursor.line = 0
-	for i := 1; i < len(buffer.line_starts); i += 1 {
-		if cursor.pos >= buffer.line_starts[i] do cursor.line = i
-		else do break
-	}
+    // Collect new line starts from start_pos to end of buffer.
+    new_line_starts := make([dynamic]int, 0, 64, context.temp_allocator)
+    append(&new_line_starts, start_pos)
+    for i := start_pos; i < len(buffer.data); i += 1 {
+        if buffer.data[i] == '\n' {
+            append(&new_line_starts, i + 1)
+        }
+    }
 
-	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
-	assert(
-		cursor.pos >= 0 && cursor.pos <= len(buffer.data),
-		"Cursor position out of bounds after line update",
-	)
+    // Truncate the original line_starts and append new entries.
+    if start_line + 1 <= len(buffer.line_starts) {
+        resize(&buffer.line_starts, start_line + 1)
+    }
+    append(&buffer.line_starts, ..new_line_starts[1:])
+
+    // Update cursor line and column.
+    cursor.line = 0
+    for i in 1..<len(buffer.line_starts) {
+        if cursor.pos >= buffer.line_starts[i] {
+            cursor.line = i
+        } else {
+            break
+        }
+    }
+    cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
 
 
 buffer_rebuild_line_starts :: proc(window: ^Window) {
     using window
     clear(&buffer.line_starts)
-    append(&buffer.line_starts, 0) // Start of first line
+    append(&buffer.line_starts, 0) // Start of first line.
     for i := 0; i < len(buffer.data); i += 1 {
         if buffer.data[i] == '\n' {
             append(&buffer.line_starts, i + 1)
         }
     }
 
-    // Update cursor line and column
+    // Update cursor line and column.
     cursor.line = 0
     for i := 1; i < len(buffer.line_starts); i += 1 {
         if cursor.pos >= buffer.line_starts[i] {
