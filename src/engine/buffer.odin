@@ -10,10 +10,12 @@ import rl "vendor:raylib"
 // Buffer stores text as an array of bytes.
 // TODO: Refactor this to use a rope?
 Buffer :: struct {
-	data:        [dynamic]u8, // Dynamic array of bytes that contains text.
-	line_starts: [dynamic]int, // Indexes of the beginning of each line in the array byte.
-	dirty:       bool, // If the buffer has been modified.
-	is_cli:      bool,
+	data:           [dynamic]u8, // Dynamic array of bytes that contains text.
+	line_starts:    [dynamic]int, // Indexes of the beginning of each line in the array byte.
+	dirty:          bool, // If the buffer has been modified.
+	is_cli:         bool,
+	max_line_width: f32, // Maximum width of any line in the buffer.
+	width_dirty:    bool, // Indicates if max_line_width needs recalculation.
 }
 
 Cursor :: struct {
@@ -62,9 +64,11 @@ Draw_Context :: struct {
 // Creates a new buffer with a given initial capacity.
 buffer_init :: proc(allocator := context.allocator, initial_cap := 1024) -> Buffer {
 	return Buffer {
-		data = make([dynamic]u8, 0, initial_cap, allocator),
-		line_starts = make([dynamic]int, 1, 64, allocator),
-		dirty = false,
+		data           = make([dynamic]u8, 0, initial_cap, allocator),
+		line_starts    = make([dynamic]int, 1, 64, allocator),
+		dirty          = false,
+		max_line_width = 0,
+		width_dirty    = true, // Initially true to calculate width on first use
 	}
 }
 
@@ -88,7 +92,7 @@ buffer_load_file :: proc(
 
 	window.cursor.pos = 0
 	window.buffer.dirty = false
-	buffer_update_line_starts(window)
+	buffer_rebuild_line_starts(window) // Full rebuild since entire buffer is replaced.
 
 	return true
 }
@@ -120,7 +124,7 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 	// Insert new text.
 	copy(buffer.data[offset:], text_bytes)
 	cursor.pos += len(text_bytes)
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 
 	buffer_update_line_starts(window)
 }
@@ -152,7 +156,7 @@ buffer_insert_char :: proc(window: ^Window, char: rune) {
 	// Insert new character.
 	copy(buffer.data[offset:], encoded[0:n_bytes])
 	cursor.pos += n_bytes
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	assert(len(buffer.data) >= old_len + n_bytes, "Insertion failed to grow buffer")
 
 	buffer_update_line_starts(window)
@@ -173,7 +177,7 @@ buffer_delete_char :: proc(window: ^Window) {
 	resize(&buffer.data, len(buffer.data) - n_bytes)
 
 	cursor.pos = start_index
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	assert(len(buffer.data) == old_len - n_bytes, "Deletion size mismatched")
 
 	buffer_update_line_starts(window)
@@ -190,7 +194,7 @@ buffer_delete_forward_char :: proc(window: ^Window) {
 	copy(buffer.data[cursor.pos:], buffer.data[cursor.pos + n_bytes:])
 	resize(&buffer.data, len(buffer.data) - n_bytes)
 
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	buffer_update_line_starts(window)
 }
 
@@ -232,7 +236,7 @@ buffer_delete_word :: proc(window: ^Window) {
 	copy(buffer.data[delete_start:], buffer.data[original_pos:])
 	resize(&buffer.data, len(buffer.data) - delete_size)
 	cursor.pos = delete_start
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	buffer_update_line_starts(window)
 }
 
@@ -270,7 +274,7 @@ buffer_delete_line :: proc(window: ^Window) {
 	old_len := len(buffer.data)
 	copy(buffer.data[start_pos:], buffer.data[end_pos:])
 	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	buffer_update_line_starts(window)
 
 	assert(
@@ -331,7 +335,7 @@ buffer_change_line :: proc(window: ^Window) {
 	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
 	assert(len(buffer.data) == old_len - (end_pos - start_pos), "Buffer resize mismatch")
 
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	buffer_update_line_starts(window)
 
 	// Verify line_starts integrity.
@@ -369,14 +373,14 @@ buffer_delete_to_line_end :: proc(window: ^Window) {
 	copy(buffer.data[cursor_pos:], buffer.data[end_pos:])
 	resize(&buffer.data, len(buffer.data) - delete_count)
 	cursor.pos = cursor_pos
-	buffer.dirty = true
+	buffer_mark_dirty(buffer)
 	buffer_update_line_starts(window)
 }
 
 buffer_delete_selection :: proc(window: ^Window) {
 	using window
 	assert(cursor.sel >= 0 && cursor.sel <= len(buffer.data), "cursor.sel out of bounds")
-    assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "cursor.pos out of bounds")
+	assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "cursor.pos out of bounds")
 
 	if cursor.sel == cursor.pos do return // No selection, nothing to delete.
 
@@ -395,8 +399,12 @@ buffer_delete_selection :: proc(window: ^Window) {
 		assert(len(buffer.data) == old_len - (end - start), "Buffer resize failed")
 
 		cursor.pos = start
-		buffer.dirty = true
+		buffer_mark_dirty(buffer)
 		buffer_update_line_starts(window)
+		
+		assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of bounds")
+		assert(len(buffer.line_starts) > 0, "Line starts must not be empty")
+		assert(buffer.line_starts[0] == 0, "First line start must be 0")
 	}
 
 	cursor.sel = cursor.pos
@@ -439,6 +447,29 @@ buffer_update_line_starts :: proc(window: ^Window) {
 		cursor.pos >= 0 && cursor.pos <= len(buffer.data),
 		"Cursor position out of bounds after line update",
 	)
+}
+
+
+buffer_rebuild_line_starts :: proc(window: ^Window) {
+    using window
+    clear(&buffer.line_starts)
+    append(&buffer.line_starts, 0) // Start of first line
+    for i := 0; i < len(buffer.data); i += 1 {
+        if buffer.data[i] == '\n' {
+            append(&buffer.line_starts, i + 1)
+        }
+    }
+
+    // Update cursor line and column
+    cursor.line = 0
+    for i := 1; i < len(buffer.line_starts); i += 1 {
+        if cursor.pos >= buffer.line_starts[i] {
+            cursor.line = i
+        } else {
+            break
+        }
+    }
+    cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
 
 //
@@ -834,112 +865,115 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 }
 
 buffer_draw_visible_lines :: proc(
-    p: ^Pulse,
-    window: ^Window,
-    font: Font,
-    ctx: Draw_Context,
-    allocator := context.allocator,
+	p: ^Pulse,
+	window: ^Window,
+	font: Font,
+	ctx: Draw_Context,
+	allocator := context.allocator,
 ) {
-    using window
+	using window
 	// Assert buffer integrity.
 	assert(buffer.data != nil, "Buffer data must not be nil")
-    assert(len(buffer.line_starts) > 0, "Buffer must have at least one line start")
+	assert(len(buffer.line_starts) > 0, "Buffer must have at least one line start")
 
 	// Assert drawing context.
 	assert(ctx.first_line >= 0, "First line must be non-negative")
-    assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
-    assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
+	assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
+	assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
 
-    selection_active := p.keymap.vim_state.mode == .VISUAL && cursor.sel != cursor.pos
-    sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
-    sel_end := max(cursor.sel, cursor.pos) + (cursor.pos < len(buffer.data) ? 1 : 0) if selection_active else 0
+	selection_active := p.keymap.vim_state.mode == .VISUAL && cursor.sel != cursor.pos
+	sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
+	sel_end :=
+		max(cursor.sel, cursor.pos) + (cursor.pos < len(buffer.data) ? 1 : 0) if selection_active else 0
 
 	// Validate selection indices when active.
-    if selection_active {
-        assert(sel_start >= 0 && sel_start <= len(buffer.data), "Selection start out of bounds")
-        assert(sel_end <= len(buffer.data), "Selection end out of bounds")
-        assert(sel_start <= sel_end, "Selection start must be <= end")
-    }
+	if selection_active {
+		assert(sel_start >= 0 && sel_start <= len(buffer.data), "Selection start out of bounds")
+		assert(sel_end <= len(buffer.data), "Selection end out of bounds")
+		assert(sel_start <= sel_end, "Selection start must be <= end")
+	}
 
 	// Handle non-last lines.
-    for line in ctx.first_line ..= ctx.last_line {
-        line_start := buffer.line_starts[line]
-        line_end := len(buffer.data)
+	for line in ctx.first_line ..= ctx.last_line {
+		line_start := buffer.line_starts[line]
+		line_end := len(buffer.data)
 
-        if line < len(buffer.line_starts) - 1 {
-            next_line_start := buffer.line_starts[line + 1]
-            if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
-                line_end = next_line_start - 1 // Exclude newline from text drawing.
-            } else {
-                line_end = next_line_start
-            }
-        }
+		if line < len(buffer.line_starts) - 1 {
+			next_line_start := buffer.line_starts[line + 1]
+			if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
+				line_end = next_line_start - 1 // Exclude newline from text drawing.
+			} else {
+				line_end = next_line_start
+			}
+		}
 
 		// Validate line bounds.
-        assert(line_start >= 0 && line_start <= len(buffer.data), "Line start out of bounds")
-        assert(line_end >= line_start && line_end <= len(buffer.data), "Line end out of bounds")
+		assert(line_start >= 0 && line_start <= len(buffer.data), "Line start out of bounds")
+		assert(line_end >= line_start && line_end <= len(buffer.data), "Line end out of bounds")
 
-        // Calculate line width for text positioning.
-        line_text_for_measure := string(buffer.data[line_start:line_end])
-        line_str_for_measure := strings.clone_to_cstring(line_text_for_measure, allocator)
-        defer delete(line_str_for_measure, allocator)
-        line_width := rl.MeasureTextEx(font.ray_font, line_str_for_measure, f32(font.size), font.spacing).x
+		// Calculate line width for text positioning.
+		line_text_for_measure := string(buffer.data[line_start:line_end])
+		line_str_for_measure := strings.clone_to_cstring(line_text_for_measure, allocator)
+		defer delete(line_str_for_measure, allocator)
+		line_width :=
+			rl.MeasureTextEx(font.ray_font, line_str_for_measure, f32(font.size), font.spacing).x
 
-        // Highlight selection if it overlaps this line.
-        if selection_active && sel_start < line_end && sel_end > line_start {
-            start_pos := max(sel_start, line_start)
-            end_pos := min(sel_end, line_end)
+		// Highlight selection if it overlaps this line.
+		if selection_active && sel_start < line_end && sel_end > line_start {
+			start_pos := max(sel_start, line_start)
+			end_pos := min(sel_end, line_end)
 
-            x_start := ctx.position.x
-            y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+			x_start := ctx.position.x
+			y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
 
-            // Measure text before selection.
-            text_before := buffer.data[line_start:start_pos]
-            before_str := strings.clone_to_cstring(string(text_before), allocator)
-            defer delete(before_str, allocator)
-            x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
+			// Measure text before selection.
+			text_before := buffer.data[line_start:start_pos]
+			before_str := strings.clone_to_cstring(string(text_before), allocator)
+			defer delete(before_str, allocator)
+			x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
 
-            // Measure selected text width.
-            text_selected := buffer.data[start_pos:end_pos]
-            selected_str := strings.clone_to_cstring(string(text_selected), allocator)
-            defer delete(selected_str, allocator)
-            sel_width := rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
+			// Measure selected text width.
+			text_selected := buffer.data[start_pos:end_pos]
+			selected_str := strings.clone_to_cstring(string(text_selected), allocator)
+			defer delete(selected_str, allocator)
+			sel_width :=
+				rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
 			highlighted_line := f32(font.size) + (font.spacing * 0.9)
 
-            // Draw highlight for selected text.
-            rl.DrawRectangleV(
-                {x_start + x_offset, y_pos},
-                {sel_width, f32(font.size)}, // Use font.size for consistent height.
-                HIGHLIGHT_COLOR,
-            )
+			// Draw highlight for selected text.
+			rl.DrawRectangleV(
+				{x_start + x_offset, y_pos},
+				{sel_width, f32(font.size)}, // Use font.size for consistent height.
+				HIGHLIGHT_COLOR,
+			)
 
-            // Extend highlight to end of line if selection includes newline.
-			is_empty_line := line_end - line_start == 0  // Check if line has no visible characters.
+			// Extend highlight to end of line if selection includes newline.
+			is_empty_line := line_end - line_start == 0 // Check if line has no visible characters.
 			if line < len(buffer.line_starts) - 1 && sel_end > line_end && is_empty_line {
-                space_width := rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x
-                rl.DrawRectangleV(
-                    {x_start + line_width, y_pos},
-                    {space_width, highlighted_line}, // Match text height.
-                    HIGHLIGHT_COLOR,
-                )
-            }
-        }
+				space_width := rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x
+				rl.DrawRectangleV(
+					{x_start + line_width, y_pos},
+					{space_width, highlighted_line}, // Match text height.
+					HIGHLIGHT_COLOR,
+				)
+			}
+		}
 
-        // Draw the line text.
-        y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
-        line_text := buffer.data[line_start:line_end]
-        line_str := strings.clone_to_cstring(string(line_text), allocator)
-        defer delete(line_str, allocator)
+		// Draw the line text.
+		y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+		line_text := buffer.data[line_start:line_end]
+		line_str := strings.clone_to_cstring(string(line_text), allocator)
+		defer delete(line_str, allocator)
 
-        rl.DrawTextEx(
-            font.ray_font,
-            line_str,
-            rl.Vector2{ctx.position.x, y_pos},
-            f32(font.size),
-            font.spacing,
-            font.color,
-        )
-    }
+		rl.DrawTextEx(
+			font.ray_font,
+			line_str,
+			rl.Vector2{ctx.position.x, y_pos},
+			f32(font.size),
+			font.spacing,
+			font.color,
+		)
+	}
 }
 
 //
@@ -999,3 +1033,9 @@ buffer_clamp_cursor_to_valid_range :: proc(w: ^Window) {
 	assert(w.cursor.pos >= line_start, "cursor.pos still < line_start after clamp")
 	assert(w.cursor.pos <= len(w.buffer.data), "cursor.pos still > buffer length after clamp")
 }
+
+buffer_mark_dirty :: proc(buffer: ^Buffer) {
+	buffer.dirty = true
+	buffer.width_dirty = true
+}
+

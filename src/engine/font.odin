@@ -1,16 +1,17 @@
 package engine
 
 import "core:strings"
-import "core:unicode/utf8"
 import "core:unicode"
+import "core:unicode/utf8"
 import rl "vendor:raylib"
 
 // This is mostly a wrapper around a couple of raylib internals, and to make it easy to work with.
 Font :: struct {
-	ray_font: rl.Font,
-	size:     i32,
-	spacing:  f32,
-	color:    rl.Color,
+	ray_font:   rl.Font,
+	size:       i32,
+	spacing:    f32,
+	color:      rl.Color,
+	char_width: f32,
 }
 
 Extra_Chars :: []rune{'ç'}
@@ -46,18 +47,21 @@ load_font_with_codepoints :: proc(
 	size: i32,
 	color: rl.Color,
 	allocator := context.allocator,
+	spacing : f32 = 2,
 ) -> Font {
 	codepoints := gen_ascii_plus()
 	file, err := strings.clone_to_cstring(file, allocator)
 
 	// NOTE: If an allocation error occurs like this, just panic
 	assert(err == nil, "Allocation error")
+	ray_font := rl.LoadFontEx(file, size, &codepoints[0], i32(len(codepoints)))
 
 	font := Font {
-		ray_font = rl.LoadFontEx(file, size, &codepoints[0], i32(len(codepoints))),
+		ray_font = ray_font,
 		size     = size,
-		spacing  = 2,
+		spacing  = spacing,
 		color    = color,
+		char_width = rl.MeasureTextEx(ray_font, "M", f32(size), spacing).x
 	}
 
 	assert(font.size > 0, "Invalid font size")
@@ -111,5 +115,5 @@ is_whitespace_byte :: proc(b: u8) -> bool {
 }
 
 is_word_character :: proc(r: rune) -> bool {
-    return unicode.is_alpha(r) || unicode.is_digit(r) || r == '_'
+	return unicode.is_alpha(r) || unicode.is_digit(r) || r == '_'
 }

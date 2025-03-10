@@ -96,26 +96,33 @@ window_scroll :: proc(w: ^Window, font: Font) {
 		w.cursor.line >= 0 && w.cursor.line <= len(w.buffer.line_starts),
 		"Cursor line index out of bounds",
 	)
-	line_start := w.buffer.line_starts[w.cursor.line]
-	text_slice := w.buffer.data[line_start:w.cursor.pos]
-	temp_len := len(text_slice)
-	temp := make([]u8, temp_len + 1)
-	defer delete(temp)
-	if temp_len > 0 do copy(temp, text_slice)
-	temp[temp_len] = 0
 
-	text_width :=
-		rl.MeasureTextEx(font.ray_font, cstring(raw_data(temp)), f32(font.size), font.spacing).x
-	cursor_x := f32(10) + text_width
-	window_width := w.rect.width
+	if w.buffer.width_dirty {
+		w.buffer.max_line_width = 0
+		for line in 0..<len(w.buffer.line_starts) {
+			start := w.buffer.line_starts[line]
+			end := len(w.buffer.data) if line == len(w.buffer.line_starts) - 1 else w.buffer.line_starts[line + 1] - 1
+			n := end - start
+			line_width := f32(n) * font.char_width + f32(n-1) * font.spacing
+			w.buffer.max_line_width = max(w.buffer.max_line_width, line_width)
+		}
+		w.buffer.width_dirty = false
+	}
+	document_width := w.buffer.max_line_width + 2 * MARGIN_X
+
+	line_start := w.buffer.line_starts[w.cursor.line]
+	n := w.cursor.pos - line_start
+	text_width := f32(n) * font.char_width + f32(n - 1) * font.spacing
+	cursor_x := f32(MARGIN_X) + text_width
+
 	viewport_left := w.scroll.x
-	viewport_right := viewport_left + window_width
+	viewport_right := viewport_left + w.rect.width
 
 	if cursor_x < viewport_left + MARGIN_X {
-		w.target_x = cursor_x - MARGIN_X
+		w.target_x = max(0, cursor_x - f32(MARGIN_X))
 	}
 	if cursor_x > viewport_right - MARGIN_X {
-		w.target_x = cursor_x - (window_width - MARGIN_X)
+		w.target_x = min(document_width - w.rect.width, cursor_x - (w.rect.width - f32(MARGIN_X)))
 	}
 
 	// Lerp the camera's current position (p.camera.target) torwards the new
