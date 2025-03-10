@@ -412,6 +412,9 @@ buffer_delete_selection :: proc(window: ^Window) {
 }
 
 // REFACTOR: This function takes quite a lot of cost
+// I probably need to update only the lines that need updating to fix this shit.
+// Currently it updates the lines of the entire buffer after every edit, no matter how simple it is.
+// NOTE: I could also potentially not care that much about this behavior...
 buffer_update_line_starts :: proc(window: ^Window) {
 	using window
 	// NOTE: Clamp the cursor position to be within valid bounds.
