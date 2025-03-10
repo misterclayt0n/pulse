@@ -56,9 +56,9 @@ window_init :: proc(
 	return new_window
 }
 
+// This functions does nothing but fuck it.
 window_update :: proc(w: ^Window) {
 	assert(w != nil, "Window must be valid")
-	buffer_update_line_starts(w)
 }
 
 window_scroll :: proc(w: ^Window, font: Font) {

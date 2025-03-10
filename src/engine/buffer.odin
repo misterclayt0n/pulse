@@ -744,8 +744,6 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 	if horizontal {
 		cursor.preferred_col = cursor.col
 	}
-
-	buffer_update_line_starts(window)
 }
 
 //
