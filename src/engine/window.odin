@@ -13,6 +13,7 @@ Window :: struct {
 	target_x:    f32,
 	target_y:    f32,
 	text_offset: f32, // Determines where text rendering starts.
+	mode:        Vim_Mode,
 }
 
 Split_Type :: enum {
@@ -51,6 +52,7 @@ window_init :: proc(
 			color         = rl.GRAY,
 			blink         = false, // FIX: This shit.
 		},
+		mode = .NORMAL,
 	}
 
 	return new_window
@@ -99,11 +101,12 @@ window_scroll :: proc(w: ^Window, font: Font) {
 
 	if w.buffer.width_dirty {
 		w.buffer.max_line_width = 0
-		for line in 0..<len(w.buffer.line_starts) {
+		for line in 0 ..< len(w.buffer.line_starts) {
 			start := w.buffer.line_starts[line]
-			end := len(w.buffer.data) if line == len(w.buffer.line_starts) - 1 else w.buffer.line_starts[line + 1] - 1
+			end :=
+				len(w.buffer.data) if line == len(w.buffer.line_starts) - 1 else w.buffer.line_starts[line + 1] - 1
 			n := end - start
-			line_width := f32(n) * font.char_width + f32(n-1) * font.spacing
+			line_width := f32(n) * font.char_width + f32(n - 1) * font.spacing
 			w.buffer.max_line_width = max(w.buffer.max_line_width, line_width)
 		}
 		w.buffer.width_dirty = false
@@ -148,11 +151,14 @@ window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allo
 
 	if first_visible_line > last_visible_line {
 		first_visible_line = 0
-		last_visible_line = max(0, len(w.buffer.line_starts) - 1) 
+		last_visible_line = max(0, len(w.buffer.line_starts) - 1)
 	}
 
 	assert(first_visible_line <= last_visible_line, "Invalid line range")
-	assert(first_visible_line >= 0 && last_visible_line < len(w.buffer.line_starts), "Visible lines out of bounds")
+	assert(
+		first_visible_line >= 0 && last_visible_line < len(w.buffer.line_starts),
+		"Visible lines out of bounds",
+	)
 
 	// Set up camera.
 	camera := rl.Camera2D {
@@ -278,6 +284,7 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 		new_window.scroll = p.windows[0].scroll
 		new_window.cursor = p.windows[0].cursor
 		new_window.is_focus = false
+		new_window.mode = .NORMAL 
 
 		append(&p.windows, new_window)
 		p.current_window = &p.windows[0]
@@ -334,6 +341,7 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
 		new_window.scroll = p.windows[0].scroll
 		new_window.cursor = p.windows[0].cursor
 		new_window.is_focus = false
+		new_window.mode = .NORMAL 
 
 		append(&p.windows, new_window)
 		p.current_window = &p.windows[0]

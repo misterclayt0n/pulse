@@ -928,7 +928,7 @@ buffer_draw_visible_lines :: proc(
 	assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
 	assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
 
-	selection_active := p.keymap.vim_state.mode == .VISUAL && cursor.sel != cursor.pos
+	selection_active := window.mode == .VISUAL && cursor.sel != cursor.pos
 	sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
 	sel_end :=
 		max(cursor.sel, cursor.pos) + (cursor.pos < len(buffer.data) ? 1 : 0) if selection_active else 0

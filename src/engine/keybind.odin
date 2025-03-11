@@ -36,7 +36,6 @@ Vim_Mode :: enum {
 Vim_State :: struct {
 	commands:          [dynamic]u8,
 	last_command:      string, // For repeating commands.
-	mode:              Vim_Mode,
 	command_normal:    bool, // Indicates whether command normal mode is active or not.
 	normal_cmd_buffer: [dynamic]u8, // Stores commands like "dd".
 }
@@ -46,7 +45,6 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 		commands       = make([dynamic]u8, 0, 1024, allocator),
 		// TODO: This should store commands from before, not when I initialize the editor state.
 		last_command   = "",
-		mode           = .NORMAL,
 		command_normal = false,
 		normal_cmd_buffer = make([dynamic]u8, 0, 16, allocator) // Should never really pass 16 len.
 	}
@@ -55,7 +53,7 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(p.keymap.mode == .VIM, "Keybind mode must be set to vim in order to update it")
 
-	#partial switch p.keymap.vim_state.mode {
+	#partial switch p.current_window.mode {
 	case .NORMAL:
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
@@ -168,7 +166,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		// Exit to Normal Mode
 		if press_and_repeat(.ESCAPE) {
-			p.keymap.vim_state.mode = .NORMAL
+			p.current_window.mode = .NORMAL
 			p.current_window.cursor.sel = 0  // Reset selection
 		}
 
@@ -372,7 +370,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 //
 
 change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
-	using p.keymap.vim_state
+	using p.current_window
 
 	#partial switch target_mode {
 	case .NORMAL:
@@ -404,14 +402,14 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			buffer_move_cursor(p.status_line.command_window, .LEFT)
 		}
 	case .VISUAL:
-		p.keymap.vim_state.mode = .VISUAL
-		p.current_window.cursor.sel = p.current_window.cursor.pos // Set selection start.
+		mode = .VISUAL
+		cursor.sel = cursor.pos // Set selection start.
 	}
 }
 
 get_out_of_command_mode :: proc(p: ^Pulse) {
-	assert(p.keymap.vim_state.mode == .COMMAND || p.keymap.vim_state.mode == .COMMAND_NORMAL)
-	p.keymap.vim_state.mode = .NORMAL
+	assert(p.current_window.mode == .COMMAND || p.current_window.mode == .COMMAND_NORMAL)
+	p.current_window.mode = .NORMAL
 	clear(&p.status_line.command_window.buffer.data)
 	p.status_line.command_window.cursor.pos = 0
 }

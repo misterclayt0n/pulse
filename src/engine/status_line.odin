@@ -57,7 +57,7 @@ status_line_update :: proc(p: ^Pulse) {
 	assert(p.current_window.cursor.col >= 0, "Cursor column must not be negative")
 
 	// Update status line information.
-	p.status_line.mode = fmt.tprintf("%v", p.keymap.vim_state.mode)
+	p.status_line.mode = fmt.tprintf("%v", p.current_window.mode)
 
 	// Update line/col from main buffer.
 	p.status_line.line_number = p.current_window.cursor.line
