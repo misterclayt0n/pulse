@@ -1,6 +1,8 @@
 package engine
 
 import "core:fmt"
+import "core:simd"
+import "base:intrinsics"
 import "core:mem"
 import "core:os"
 import "core:strings"
@@ -411,12 +413,8 @@ buffer_delete_selection :: proc(window: ^Window) {
 	assert(cursor.sel == cursor.pos, "Selection not reset")
 }
 
-// REFACTOR: This function takes quite a lot of cost
-// I probably need to update only the lines that need updating to fix this shit.
-// Currently it updates the lines of the entire buffer after every edit, no matter how simple it is.
-// NOTE: I could also potentially not care that much about this behavior...
 buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
-	using window
+    using window
 
     // Clamp the edit position to the current buffer length.
     clamped_edit_pos := min(edit_pos, len(buffer.data))
@@ -427,7 +425,7 @@ buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
     start_line := 0
 
     for low <= high {
-        mid := (low + high) // 2
+        mid := (low + high) / 2
         if buffer.line_starts[mid] <= clamped_edit_pos {
             start_line = mid
             low = mid + 1
@@ -441,7 +439,41 @@ buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
     // Collect new line starts from start_pos to end of buffer.
     new_line_starts := make([dynamic]int, 0, 64, context.temp_allocator)
     append(&new_line_starts, start_pos)
-    for i := start_pos; i < len(buffer.data); i += 1 {
+
+    // SIMD setup: Process 16 bytes at a time (128-bit SIMD).
+    newline := u8('\n')
+    newline_array: [16]u8
+    for j in 0..<16 do newline_array[j] = newline
+    newline_lane := simd.from_array(newline_array)
+
+    // Get raw pointer to buffer data for direct SIMD loading.
+    data_ptr := raw_data(buffer.data)
+
+    i := start_pos
+    for i + 16 <= len(buffer.data) {
+		lane := simd.from_slice(simd.u8x16, buffer.data[i:i + 16])
+
+        // Compare with newline character, getting a mask (0x00 or 0xff per byte).
+		mask := simd.lanes_eq(lane, newline_lane)
+
+        // Convert mask to a 128-bit integer for efficient bit processing.
+        mask_u128 := transmute(u128)mask
+
+        // Process all newline positions in the mask using bit manipulation.
+        for mask_u128 != 0 {
+            bit_pos := simd.count_trailing_zeros(mask_u128)
+            byte_index := bit_pos / 8
+            append_elem(&new_line_starts, i + int(byte_index) + 1)
+
+            // Clear the bits for this byte (8 bits set per matching byte).
+            mask_u128 &~= (0xff << (byte_index * 8))
+        }
+
+        i += 16
+    }
+
+    // Handle remaining bytes that don’t fit into a 16-byte chunk.
+    for ; i < len(buffer.data); i += 1 {
         if buffer.data[i] == '\n' {
             append(&new_line_starts, i + 1)
         }
@@ -455,16 +487,15 @@ buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
 
     // Update cursor line and column.
     cursor.line = 0
-    for i in 1..<len(buffer.line_starts) {
-        if cursor.pos >= buffer.line_starts[i] {
-            cursor.line = i
+    for j in 1..<len(buffer.line_starts) {
+        if cursor.pos >= buffer.line_starts[j] {
+            cursor.line = j
         } else {
             break
         }
     }
     cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
-
 
 buffer_rebuild_line_starts :: proc(window: ^Window) {
     using window
