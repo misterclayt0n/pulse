@@ -4,9 +4,9 @@ import "core:fmt"
 import "core:sort"
 import rl "vendor:raylib"
 
-// 
+//
 // Sanity checks.
-// 
+//
 
 #assert(
 	DEFAULT_FONT_SIZE >= MIN_FONT_SIZE && DEFAULT_FONT_SIZE <= MAX_FONT_SIZE,
@@ -85,7 +85,7 @@ pulse_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		buffer_clamp_cursor_to_valid_range(&w)
 		if w.is_focus {
 			buffer_clamp_cursor_to_valid_range(&w)
-			window_update(&w) // Recompute line_starts/cursor.line only here
+			assert(&w != nil, "Window must be valid")
 			window_scroll(&w, p.font)
 		}
 	}

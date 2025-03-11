@@ -27,6 +27,10 @@ Split_Edge :: struct {
 	start, end: rl.Vector2,
 }
 
+// 
+// Struct management
+// 
+
 window_init :: proc(
 	buffer: ^Buffer,
 	rect: rl.Rectangle,
@@ -58,15 +62,10 @@ window_init :: proc(
 	return new_window
 }
 
-// This functions does nothing but fuck it.
-window_update :: proc(w: ^Window) {
-	assert(w != nil, "Window must be valid")
-}
-
 window_scroll :: proc(w: ^Window, font: Font) {
-	// 
+	//
 	// Vertical scrolling logic
-	// 
+	//
 
 	line_height := f32(font.size) + font.spacing
 	cursor_world_y := 10 + f32(w.cursor.line) * line_height
@@ -90,9 +89,9 @@ window_scroll :: proc(w: ^Window, font: Font) {
 		w.target_y = w.scroll.y + delta
 	}
 
-	// 
+	//
 	// Horizontal scrolling logic
-	// 
+	//
 
 	assert(
 		w.cursor.line >= 0 && w.cursor.line <= len(w.buffer.line_starts),
@@ -134,9 +133,9 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	w.scroll.x = rl.Lerp(w.scroll.x, w.target_x, SCROLL_SMOOTHNESS)
 }
 
-// 
+//
 // Drawing
-// 
+//
 
 window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allocator) {
 	screen_width := i32(w.rect.width)
@@ -284,7 +283,7 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 		new_window.scroll = p.windows[0].scroll
 		new_window.cursor = p.windows[0].cursor
 		new_window.is_focus = false
-		new_window.mode = .NORMAL 
+		new_window.mode = .NORMAL
 
 		append(&p.windows, new_window)
 		p.current_window = &p.windows[0]
@@ -295,10 +294,6 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 			width  = screen_width - split_pos,
 			height = screen_height,
 		}
-	}
-
-	for &w in p.windows {
-		window_update(&w)
 	}
 }
 
@@ -341,7 +336,7 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
 		new_window.scroll = p.windows[0].scroll
 		new_window.cursor = p.windows[0].cursor
 		new_window.is_focus = false
-		new_window.mode = .NORMAL 
+		new_window.mode = .NORMAL
 
 		append(&p.windows, new_window)
 		p.current_window = &p.windows[0]
@@ -355,7 +350,7 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
 	}
 
 	for &w in p.windows {
-		window_update(&w)
+		assert(&w != nil, "Window must be valid")
 	}
 }
 
@@ -393,7 +388,7 @@ window_remove_split :: proc(p: ^Pulse) {
 	p.current_window = &p.windows[0]
 	p.split_type = .NONE
 
-	window_update(p.current_window)
+	assert(p.current_window != nil, "Window must be valid")
 }
 
 window_close_current :: proc(p: ^Pulse) {
@@ -424,7 +419,7 @@ window_close_current :: proc(p: ^Pulse) {
 		}
 		p.current_window.is_focus = true
 		p.split_type = .NONE
-		window_update(p.current_window)
+		assert(p.current_window != nil, "Window must be valid")
 
 		defer {
 			assert(p.split_type == .NONE, "Close left split type active")
@@ -570,7 +565,7 @@ find_all_split_edges :: proc(
 	}
 }
 
-// 
+//
 // Focus
 //
 
