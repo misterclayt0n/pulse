@@ -59,17 +59,53 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 
 		// Default movements between all modes.
-		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
-		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(p.current_window, .RIGHT)
-		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(p.current_window, .UP)
-		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(p.current_window, .DOWN)
+		if press_and_repeat(.LEFT) do buffer_move_cursor(p.current_window, .LEFT)
+		if press_and_repeat(.RIGHT) do buffer_move_cursor(p.current_window, .RIGHT)
+		if press_and_repeat(.UP) do buffer_move_cursor(p.current_window, .UP)
+		if press_and_repeat(.DOWN) do buffer_move_cursor(p.current_window, .DOWN)
 		if press_and_repeat(.DELETE) do buffer_delete_forward_char(p.current_window)
 		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
 		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
 
+		// HJKL.
+		if press_and_repeat(.H) {
+			if ctrl_pressed do window_focus_left(p)
+			else do buffer_move_cursor(p.current_window, .LEFT)
+		}
+
+		if press_and_repeat(.J) {
+			if ctrl_pressed do window_focus_bottom(p)
+			else do buffer_move_cursor(p.current_window, .DOWN)
+		}
+
+		if press_and_repeat(.K) {
+			if ctrl_pressed do window_focus_top(p)
+			else do buffer_move_cursor(p.current_window, .UP)
+		}
+
+		if press_and_repeat(.L) {
+			if ctrl_pressed do window_focus_right(p)
+			else do buffer_move_cursor(p.current_window, .RIGHT)
+		}
+
 		// Mode changing.
-		if press_and_repeat(.I) do change_mode(p, .INSERT)
-		if press_and_repeat(.A) do append_right_motion(p)
+		// REFACTOR: These focus bindings kind of suck in my opinion.
+		if press_and_repeat(.I) {
+			if shift_pressed {
+				buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+				change_mode(p, .INSERT)
+			}
+			else do change_mode(p, .INSERT)
+		}
+
+		if press_and_repeat(.A) {
+    		if shift_pressed {
+    			buffer_move_cursor(p.current_window, .LINE_END)
+				append_right_motion(p)
+            }
+			else do append_right_motion(p)
+		}
+
 		if press_and_repeat(.V) do change_mode(p, .VISUAL)
 
 		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
@@ -82,37 +118,38 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			change_mode(p, .INSERT)
 		}
 
-		if shift_pressed {
-			if press_and_repeat(.I) {
-				buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-				change_mode(p, .INSERT)
-			}
+		if press_and_repeat(.D) {
+            if shift_pressed do buffer_delete_to_line_end(p.current_window)
+        }
 
-			if press_and_repeat(.A) {
-				buffer_move_cursor(p.current_window, .LINE_END)
-				append_right_motion(p)
-			}
+		if press_and_repeat(.C) {
+    		if shift_pressed {
+        		buffer_delete_to_line_end(p.current_window)
+                change_mode(p, .INSERT)
+            }
+    	}
 
-			if press_and_repeat(.D) do buffer_delete_to_line_end(p.current_window)
-			if press_and_repeat(.C) {
-				buffer_delete_to_line_end(p.current_window)
-				change_mode(p, .INSERT)
-			}
-			if press_and_repeat(.MINUS) do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-
-			if press_and_repeat(.SEMICOLON) do change_mode(p, .COMMAND)
-			if press_and_repeat(.FOUR) do buffer_move_cursor(p.current_window, .LINE_END)
-			if press_and_repeat(.G) do buffer_move_cursor(p.current_window, .FILE_END)
+		if press_and_repeat(.MINUS) {
+    		if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
 		}
 
-		if ctrl_pressed {
-			// REFACTOR: These bindings kind of suck in my opinion.
-			if rl.IsKeyPressed(.H) do window_focus_left(p)
-			if rl.IsKeyPressed(.L) do window_focus_right(p)
-			if rl.IsKeyPressed(.J) do window_focus_bottom(p)
-			if rl.IsKeyPressed(.K) do window_focus_top(p)
-			if rl.IsKeyPressed(.TAB) do window_switch_focus(p)
-			if rl.IsKeyPressed(.W) do window_remove_split(p)
+		if press_and_repeat(.SEMICOLON) {
+    		if shift_pressed do change_mode(p, .COMMAND)
+		}
+
+		if press_and_repeat(.FOUR) {
+    		if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
+		}
+
+		if press_and_repeat(.G) {
+    		if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
+		}
+
+		if press_and_repeat(.TAB) {
+    		if ctrl_pressed do window_switch_focus(p)
+		}
+		if press_and_repeat(.W) {
+    		if ctrl_pressed do window_remove_split(p)
 		}
 
 		if press_and_repeat(.O) {
@@ -120,21 +157,12 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			else do insert_newline(p, false)
 		}
 
-		if press_and_repeat(.I) {
-			if shift_pressed {
-				buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-				change_mode(p, .INSERT)
-			} else {
-				change_mode(p, .INSERT)
-			}
-		}
-
 		if press_and_repeat(.F2) {
 			using p.keymap.vim_state
 			command_normal = !command_normal
 		}
 
-		// 
+		//
 		// Command buffer evaluation.
 		//
 
@@ -153,9 +181,9 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
                 execute_normal_command(p, cmd_str)
                 clear(&p.keymap.vim_state.normal_cmd_buffer)
             } else if !is_prefix_of_command(cmd_str) {
-				// NOTE: Here we constantly clear the command buffer array if we cannot find a 
-				// valid command sequence, which include any normal command (h, j, k, l, etc). 
-			    // Maybe some performance considerations should be made about 
+				// NOTE: Here we constantly clear the command buffer array if we cannot find a
+				// valid command sequence, which include any normal command (h, j, k, l, etc).
+			    // Maybe some performance considerations should be made about
 				// this, but for now (06/03/25) I have not seen any visual impacts.
                 clear(&p.keymap.vim_state.normal_cmd_buffer)
             }
@@ -182,10 +210,16 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
 		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
 
-		if shift_pressed {
-			if press_and_repeat(.FOUR) do buffer_move_cursor(p.current_window, .LINE_END)
-			if press_and_repeat(.MINUS) do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-			if press_and_repeat(.G) do buffer_move_cursor(p.current_window, .FILE_END)
+		if press_and_repeat(.FOUR) {
+    		if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
+		}
+
+		if press_and_repeat(.MINUS) {
+    		if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+		}
+
+		if press_and_repeat(.G) {
+    		if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
 		}
 
 		// Selection operations.
@@ -199,7 +233,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			change_mode(p, .INSERT)
 		}
 
-		// 
+		//
 		// Command buffer evaluation.
 		//
 
@@ -218,9 +252,9 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
                 execute_normal_command(p, cmd_str)
                 clear(&p.keymap.vim_state.normal_cmd_buffer)
             } else if !is_prefix_of_command(cmd_str) {
-				// NOTE: Here we constantly clear the command buffer array if we cannot find a 
-				// valid command sequence, which include any normal command (h, j, k, l, etc). 
-			    // Maybe some performance considerations should be made about 
+				// NOTE: Here we constantly clear the command buffer array if we cannot find a
+				// valid command sequence, which include any normal command (h, j, k, l, etc).
+			    // Maybe some performance considerations should be made about
 				// this, but for now (06/03/25) I have not seen any visual impacts.
                 clear(&p.keymap.vim_state.normal_cmd_buffer)
             }
@@ -279,9 +313,6 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.HOME) do buffer_move_cursor(command_window, .LINE_START)
 		if press_and_repeat(.END) do buffer_move_cursor(command_window, .LINE_END)
 
-		// NOTE: Maybe I should some sort of flag for these emacs bindings inside command mode.
-		// Something like emacs_mode: bool, and then I could sort of switch between using the emacs bindings inside
-		// command mode or just press esc and go for the normal mode of command mode.
 		if ctrl_pressed {
 			if press_and_repeat(.B) do buffer_move_cursor(command_window, .LEFT)
 			if press_and_repeat(.F) do buffer_move_cursor(command_window, .RIGHT)

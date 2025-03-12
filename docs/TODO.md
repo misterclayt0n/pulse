@@ -19,7 +19,8 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [x] Visual mode.
 - [ ] Visual line mode.
 - [ ] Visual block mode (I probably want to develop this the way Zed does it, with multiple cursors).
-- [x] Comamnd buffer (execute motions like "gg", "gd", etc)
+- [x] Command buffer (execute motions like "gg", "gd", etc)
+- [ ] In/out control (commands like "viw", "ciw", "vaw", etc)
 
 ### Emacs
 Emacs?
@@ -81,7 +82,8 @@ Very nice to have, also no idea how to implement it.
 Probably use something like tree-sitter, but how exactly I'm using this from Odin?
 
 ### Internal tools
-- [ ] Some sort of simulation to test the functionalities of the editor (similar to how Jonathan Blow does it in his games) -> Deterministic simulation btw.
+- [x] Some sort of simulation to test the functionalities of the editor (similar to how Jonathan Blow does it in his games) -> Deterministic simulation btw.
+    This is probably not the right approach, and possibly a waste of time, since the "simulation" would me just actually using the editor daily and eventually bumping into the assertions.
 - [x] Some kind of logging after commands were successful (probably at the right corner of the status bar).
 - [ ] More detailed logging at a special buffer.
 
