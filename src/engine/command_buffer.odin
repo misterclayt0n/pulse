@@ -69,10 +69,6 @@ execute_command :: proc(p: ^Pulse) {
 	case "close":
 		status_line_log(&p.status_line, "Split closed")
 		window_close_current(p)
-	case "test":
-		operations := []string{"insert 'a'", "move .DOWN"} 
-        sim_pulse := pulse_clone(p)
-        run_simulation(sim_pulse, operations) 
 	case:
 		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}
