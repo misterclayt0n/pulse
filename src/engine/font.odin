@@ -114,6 +114,10 @@ is_whitespace_byte :: proc(b: u8) -> bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
+is_whitespace_rune :: proc(r: rune) -> bool {
+	return unicode.is_space(r)
+}
+
 is_word_character :: proc(r: rune) -> bool {
 	return unicode.is_alpha(r) || unicode.is_digit(r) || r == '_'
 }

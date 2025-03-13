@@ -1,15 +1,17 @@
 package engine
 
+import "core:fmt"
 import "core:strings"
 
 // NOTE: Leader key is hard coded as space.
-Known_Commands :: []string{ 
+Known_Commands :: []string {
 	"gg", // TODO: Top of the buffer.
-	"gd", // TODO: Go to definition 
-	"dd", // TODO: Delete line.
-	"cc", // TODO: Change line.
+	"gd", // TODO: Go to definition
+	"dd",
+	"cc",
 	"yy", // TODO: Yank line.
 	" w", // <leader>w - save file
+	"iw", // Select inner word in visual mode.
 }
 
 is_complete_command :: proc(cmd: string) -> bool {
@@ -39,6 +41,21 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 		change_mode(p, .INSERT)
 	case " w":
 		status_line_log(&p.status_line, "Saving file from leader w")
+	case "iw":
+		if p.current_window.mode == .VISUAL {
+			start, end := find_word_boundaries(p.current_window.buffer, p.current_window.cursor.pos)
+
+			if start < end {
+				p.current_window.cursor.sel = start
+				if end > start {
+					// Move cursor to the last character of the word.
+					last_rune_start := prev_rune_start(p.current_window.buffer.data[:], end)
+					p.current_window.cursor.pos = last_rune_start
+				} else {
+					p.current_window.cursor.pos = start
+				}
+			}
+		}
 	}
 }
 

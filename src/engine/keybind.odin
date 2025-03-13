@@ -42,11 +42,11 @@ Vim_State :: struct {
 
 vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 	return Vim_State {
-		commands       = make([dynamic]u8, 0, 1024, allocator),
+		commands          = make([dynamic]u8, 0, 1024, allocator),
 		// TODO: This should store commands from before, not when I initialize the editor state.
-		last_command   = "",
-		command_normal = false,
-		normal_cmd_buffer = make([dynamic]u8, 0, 16, allocator) // Should never really pass 16 len.
+		last_command      = "",
+		command_normal    = false,
+		normal_cmd_buffer = make([dynamic]u8, 0, 16, allocator), // Should never really pass 16 len.
 	}
 }
 
@@ -94,16 +94,14 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if shift_pressed {
 				buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
 				change_mode(p, .INSERT)
-			}
-			else do change_mode(p, .INSERT)
+			} else do change_mode(p, .INSERT)
 		}
 
 		if press_and_repeat(.A) {
-    		if shift_pressed {
-    			buffer_move_cursor(p.current_window, .LINE_END)
+			if shift_pressed {
+				buffer_move_cursor(p.current_window, .LINE_END)
 				append_right_motion(p)
-            }
-			else do append_right_motion(p)
+			} else do append_right_motion(p)
 		}
 
 		if press_and_repeat(.V) do change_mode(p, .VISUAL)
@@ -119,37 +117,37 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 
 		if press_and_repeat(.D) {
-            if shift_pressed do buffer_delete_to_line_end(p.current_window)
-        }
+			if shift_pressed do buffer_delete_to_line_end(p.current_window)
+		}
 
 		if press_and_repeat(.C) {
-    		if shift_pressed {
-        		buffer_delete_to_line_end(p.current_window)
-                change_mode(p, .INSERT)
-            }
-    	}
+			if shift_pressed {
+				buffer_delete_to_line_end(p.current_window)
+				change_mode(p, .INSERT)
+			}
+		}
 
 		if press_and_repeat(.MINUS) {
-    		if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+			if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
 		}
 
 		if press_and_repeat(.SEMICOLON) {
-    		if shift_pressed do change_mode(p, .COMMAND)
+			if shift_pressed do change_mode(p, .COMMAND)
 		}
 
 		if press_and_repeat(.FOUR) {
-    		if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
+			if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
 		}
 
 		if press_and_repeat(.G) {
-    		if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
+			if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
 		}
 
 		if press_and_repeat(.TAB) {
-    		if ctrl_pressed do window_switch_focus(p)
+			if ctrl_pressed do window_switch_focus(p)
 		}
 		if press_and_repeat(.W) {
-    		if ctrl_pressed do window_remove_split(p)
+			if ctrl_pressed do window_remove_split(p)
 		}
 
 		if press_and_repeat(.O) {
@@ -177,50 +175,43 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			defer delete(cmd_str)
 
 			// Check and execute the command
-            if is_complete_command(cmd_str) {
-                execute_normal_command(p, cmd_str)
-                clear(&p.keymap.vim_state.normal_cmd_buffer)
-            } else if !is_prefix_of_command(cmd_str) {
+			if is_complete_command(cmd_str) {
+				execute_normal_command(p, cmd_str)
+				clear(&p.keymap.vim_state.normal_cmd_buffer)
+			} else if !is_prefix_of_command(cmd_str) {
 				// NOTE: Here we constantly clear the command buffer array if we cannot find a
 				// valid command sequence, which include any normal command (h, j, k, l, etc).
-			    // Maybe some performance considerations should be made about
+				// Maybe some performance considerations should be made about
 				// this, but for now (06/03/25) I have not seen any visual impacts.
-                clear(&p.keymap.vim_state.normal_cmd_buffer)
-            }
+				clear(&p.keymap.vim_state.normal_cmd_buffer)
+			}
 		}
 
 	case .VISUAL:
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
 
-		// Exit to Normal Mode
+		// Exit to Normal Mode.
 		if press_and_repeat(.ESCAPE) {
 			p.current_window.mode = .NORMAL
-			p.current_window.cursor.sel = 0  // Reset selection
+			p.current_window.cursor.sel = 0 // Reset selection.
 		}
 
-		// Movement to extend selection
-		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
-		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(p.current_window, .RIGHT)
-		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(p.current_window, .UP)
-		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(p.current_window, .DOWN)
-		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
-		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
-		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
-		if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
-		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
-		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
-
-		if press_and_repeat(.FOUR) {
-    		if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
-		}
-
-		if press_and_repeat(.MINUS) {
-    		if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-		}
-
-		if press_and_repeat(.G) {
-    		if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
-		}
+		// Only execute "normal" commands if command buffer is empty.
+		if len(p.keymap.vim_state.normal_cmd_buffer) == 0 {
+    		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
+    		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(p.current_window, .RIGHT)
+    		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(p.current_window, .UP)
+    		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(p.current_window, .DOWN)
+    		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
+    		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
+    		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
+    		if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
+    		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
+    		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
+            if press_and_repeat(.FOUR) && shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
+            if press_and_repeat(.MINUS) && shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+            if press_and_repeat(.G) && shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
+        }
 
 		// Selection operations.
 		if press_and_repeat(.D) {
@@ -248,16 +239,16 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			defer delete(cmd_str)
 
 			// Check and execute the command
-            if is_complete_command(cmd_str) {
-                execute_normal_command(p, cmd_str)
-                clear(&p.keymap.vim_state.normal_cmd_buffer)
-            } else if !is_prefix_of_command(cmd_str) {
+			if is_complete_command(cmd_str) {
+				execute_normal_command(p, cmd_str)
+				clear(&p.keymap.vim_state.normal_cmd_buffer)
+			} else if !is_prefix_of_command(cmd_str) {
 				// NOTE: Here we constantly clear the command buffer array if we cannot find a
 				// valid command sequence, which include any normal command (h, j, k, l, etc).
-			    // Maybe some performance considerations should be made about
+				// Maybe some performance considerations should be made about
 				// this, but for now (06/03/25) I have not seen any visual impacts.
-                clear(&p.keymap.vim_state.normal_cmd_buffer)
-            }
+				clear(&p.keymap.vim_state.normal_cmd_buffer)
+			}
 		}
 
 	case .INSERT:

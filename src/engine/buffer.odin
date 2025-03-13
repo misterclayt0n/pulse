@@ -117,7 +117,7 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 	text_bytes := transmute([]u8)text
 
 	assert(len(buffer.data) >= 0, "Buffer length corrupted")
-	assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
+assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
 
 	// Make space for new text.
 	resize(&buffer.data, len(buffer.data) + len(text_bytes))
@@ -1091,3 +1091,45 @@ buffer_mark_dirty :: proc(buffer: ^Buffer) {
 	buffer.width_dirty = true
 }
 
+find_word_boundaries :: proc(buffer: ^Buffer, pos: int) -> (start: int, end: int) {
+	assert(buffer != nil, "Invalid buffer")
+    if pos < 0 || pos >= len(buffer.data) do return 0, 0
+
+    current_rune, _ := utf8.decode_rune(buffer.data[pos:])
+    is_whitespace := is_whitespace_rune(current_rune)
+
+    if is_whitespace {
+        // Select contiguous whitespace.
+        start = pos
+        for start > 0 {
+            prev_pos := prev_rune_start(buffer.data[:], start)
+            r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+            if !is_whitespace_rune(r) do break
+            start = prev_pos
+        }
+        end = pos
+        for end < len(buffer.data) {
+            r, n := utf8.decode_rune(buffer.data[end:])
+            if n == 0 || !is_whitespace_rune(r) do break
+            end += n
+        }
+    } else {
+        // Select the word.
+        is_word := is_word_character(current_rune)
+        start = pos
+        for start > 0 {
+            prev_pos := prev_rune_start(buffer.data[:], start)
+            r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+            if is_word_character(r) != is_word do break
+            start = prev_pos
+        }
+        end = pos
+        for end < len(buffer.data) {
+            r, n := utf8.decode_rune(buffer.data[end:])
+            if n == 0 || is_word_character(r) != is_word do break
+            end += n
+        }
+    }
+
+    return start, end
+}
