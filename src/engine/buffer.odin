@@ -1,10 +1,10 @@
 package engine
 
-import "core:fmt"
-import "core:simd"
 import "base:intrinsics"
+import "core:fmt"
 import "core:mem"
 import "core:os"
+import "core:simd"
 import "core:strings"
 import "core:unicode/utf8"
 import rl "vendor:raylib"
@@ -50,6 +50,9 @@ Cursor_Movement :: enum {
 	FIRST_NON_BLANK,
 	FILE_BEGINNING,
 	FILE_END,
+	BIG_WORD_RIGHT,
+	BIG_WORD_END,
+	BIG_WORD_LEFT,
 	// TODO: A lot more
 }
 
@@ -61,6 +64,30 @@ Draw_Context :: struct {
 	first_line:    int,
 	last_line:     int,
 	line_height:   int,
+}
+
+Word_Type :: enum {
+	WORD, // Regular word (alphanumeric + underscore, separated by punctuation/whitespace).
+	BIG_WORD, // Big word (anything not whitespace is part of the word).
+}
+
+Char_Class :: enum {
+	WHITESPACE,
+	WORD,
+	PUNCTUATION,
+}
+
+get_char_class :: proc(r: rune, word_type: Word_Type) -> Char_Class {
+	switch word_type {
+	case .WORD:
+		if is_whitespace_rune(r) do return .WHITESPACE
+		else if is_word_character(r) do return .WORD
+		else do return .PUNCTUATION
+	case .BIG_WORD:
+		if is_whitespace_rune(r) do return .WHITESPACE
+		else do return .WORD // Everything non-whitespace is a word.
+	}
+	return .WHITESPACE // Default case, should not occur.
 }
 
 // 
@@ -117,7 +144,7 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 	text_bytes := transmute([]u8)text
 
 	assert(len(buffer.data) >= 0, "Buffer length corrupted")
-assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
+	assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
 
 	// Make space for new text.
 	resize(&buffer.data, len(buffer.data) + len(text_bytes))
@@ -407,7 +434,7 @@ buffer_delete_selection :: proc(window: ^Window) {
 		cursor.pos = start
 		buffer_mark_dirty(buffer)
 		buffer_update_line_starts(window, start)
-		
+
 		assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of bounds")
 		assert(len(buffer.line_starts) > 0, "Line starts must not be empty")
 		assert(buffer.line_starts[0] == 0, "First line start must be 0")
@@ -418,7 +445,10 @@ buffer_delete_selection :: proc(window: ^Window) {
 }
 
 buffer_delete_range :: proc(window: ^Window, start, end: int) {
-	assert(start >= 0 && start <= end && end <= len(window.buffer.data), "Invalid range for deletion")
+	assert(
+		start >= 0 && start <= end && end <= len(window.buffer.data),
+		"Invalid range for deletion",
+	)
 
 	// Shift the remaining buffer content to remove the range.
 	copy(window.buffer.data[start:], window.buffer.data[end:])
@@ -432,109 +462,109 @@ buffer_delete_range :: proc(window: ^Window, start, end: int) {
 }
 
 buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
-    using window
+	using window
 
-    // Clamp the edit position to the current buffer length.
-    clamped_edit_pos := min(edit_pos, len(buffer.data))
+	// Clamp the edit position to the current buffer length.
+	clamped_edit_pos := min(edit_pos, len(buffer.data))
 
-    // Find the line containing the edit position (using binary search).
-    low := 0
-    high := len(buffer.line_starts) - 1
-    start_line := 0
+	// Find the line containing the edit position (using binary search).
+	low := 0
+	high := len(buffer.line_starts) - 1
+	start_line := 0
 
-    for low <= high {
-        mid := (low + high) / 2
-        if buffer.line_starts[mid] <= clamped_edit_pos {
-            start_line = mid
-            low = mid + 1
-        } else {
-            high = mid - 1
-        }
-    }
+	for low <= high {
+		mid := (low + high) / 2
+		if buffer.line_starts[mid] <= clamped_edit_pos {
+			start_line = mid
+			low = mid + 1
+		} else {
+			high = mid - 1
+		}
+	}
 
-    start_pos := buffer.line_starts[start_line]
+	start_pos := buffer.line_starts[start_line]
 
-    // Collect new line starts from start_pos to end of buffer.
-    new_line_starts := make([dynamic]int, 0, 64, context.temp_allocator)
-    append(&new_line_starts, start_pos)
+	// Collect new line starts from start_pos to end of buffer.
+	new_line_starts := make([dynamic]int, 0, 64, context.temp_allocator)
+	append(&new_line_starts, start_pos)
 
-    // SIMD setup: Process 16 bytes at a time (128-bit SIMD).
-    newline := u8('\n')
-    newline_array: [16]u8
-    for j in 0..<16 do newline_array[j] = newline
-    newline_lane := simd.from_array(newline_array)
+	// SIMD setup: Process 16 bytes at a time (128-bit SIMD).
+	newline := u8('\n')
+	newline_array: [16]u8
+	for j in 0 ..< 16 do newline_array[j] = newline
+	newline_lane := simd.from_array(newline_array)
 
-    // Get raw pointer to buffer data for direct SIMD loading.
-    data_ptr := raw_data(buffer.data)
+	// Get raw pointer to buffer data for direct SIMD loading.
+	data_ptr := raw_data(buffer.data)
 
-    i := start_pos
-    for i + 16 <= len(buffer.data) {
+	i := start_pos
+	for i + 16 <= len(buffer.data) {
 		lane := simd.from_slice(simd.u8x16, buffer.data[i:i + 16])
 
-        // Compare with newline character, getting a mask (0x00 or 0xff per byte).
+		// Compare with newline character, getting a mask (0x00 or 0xff per byte).
 		mask := simd.lanes_eq(lane, newline_lane)
 
-        // Convert mask to a 128-bit integer for efficient bit processing.
-        mask_u128 := transmute(u128)mask
+		// Convert mask to a 128-bit integer for efficient bit processing.
+		mask_u128 := transmute(u128)mask
 
-        // Process all newline positions in the mask using bit manipulation.
-        for mask_u128 != 0 {
-            bit_pos := simd.count_trailing_zeros(mask_u128)
-            byte_index := bit_pos / 8
-            append_elem(&new_line_starts, i + int(byte_index) + 1)
+		// Process all newline positions in the mask using bit manipulation.
+		for mask_u128 != 0 {
+			bit_pos := simd.count_trailing_zeros(mask_u128)
+			byte_index := bit_pos / 8
+			append_elem(&new_line_starts, i + int(byte_index) + 1)
 
-            // Clear the bits for this byte (8 bits set per matching byte).
-            mask_u128 &~= (0xff << (byte_index * 8))
-        }
+			// Clear the bits for this byte (8 bits set per matching byte).
+			mask_u128 &~= (0xff << (byte_index * 8))
+		}
 
-        i += 16
-    }
+		i += 16
+	}
 
-    // Handle remaining bytes that don’t fit into a 16-byte chunk.
-    for ; i < len(buffer.data); i += 1 {
-        if buffer.data[i] == '\n' {
-            append(&new_line_starts, i + 1)
-        }
-    }
+	// Handle remaining bytes that don’t fit into a 16-byte chunk.
+	for ; i < len(buffer.data); i += 1 {
+		if buffer.data[i] == '\n' {
+			append(&new_line_starts, i + 1)
+		}
+	}
 
-    // Truncate the original line_starts and append new entries.
-    if start_line + 1 <= len(buffer.line_starts) {
-        resize(&buffer.line_starts, start_line + 1)
-    }
-    append(&buffer.line_starts, ..new_line_starts[1:])
+	// Truncate the original line_starts and append new entries.
+	if start_line + 1 <= len(buffer.line_starts) {
+		resize(&buffer.line_starts, start_line + 1)
+	}
+	append(&buffer.line_starts, ..new_line_starts[1:])
 
-    // Update cursor line and column.
-    cursor.line = 0
-    for j in 1..<len(buffer.line_starts) {
-        if cursor.pos >= buffer.line_starts[j] {
-            cursor.line = j
-        } else {
-            break
-        }
-    }
-    cursor.col = cursor.pos - buffer.line_starts[cursor.line]
+	// Update cursor line and column.
+	cursor.line = 0
+	for j in 1 ..< len(buffer.line_starts) {
+		if cursor.pos >= buffer.line_starts[j] {
+			cursor.line = j
+		} else {
+			break
+		}
+	}
+	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
 
 buffer_rebuild_line_starts :: proc(window: ^Window) {
-    using window
-    clear(&buffer.line_starts)
-    append(&buffer.line_starts, 0) // Start of first line.
-    for i := 0; i < len(buffer.data); i += 1 {
-        if buffer.data[i] == '\n' {
-            append(&buffer.line_starts, i + 1)
-        }
-    }
+	using window
+	clear(&buffer.line_starts)
+	append(&buffer.line_starts, 0) // Start of first line.
+	for i := 0; i < len(buffer.data); i += 1 {
+		if buffer.data[i] == '\n' {
+			append(&buffer.line_starts, i + 1)
+		}
+	}
 
-    // Update cursor line and column.
-    cursor.line = 0
-    for i := 1; i < len(buffer.line_starts); i += 1 {
-        if cursor.pos >= buffer.line_starts[i] {
-            cursor.line = i
-        } else {
-            break
-        }
-    }
-    cursor.col = cursor.pos - buffer.line_starts[cursor.line]
+	// Update cursor line and column.
+	cursor.line = 0
+	for i := 1; i < len(buffer.line_starts); i += 1 {
+		if cursor.pos >= buffer.line_starts[i] {
+			cursor.line = i
+		} else {
+			break
+		}
+	}
+	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
 
 //
@@ -634,117 +664,58 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 		}
 		horizontal = true
 	case .WORD_LEFT:
-		if cursor.pos <= 0 do break
-
-		// Move to previous rune start.
-		cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
-
-		// Skip whitespace backwards.
-		for cursor.pos > 0 && is_whitespace_byte(buffer.data[cursor.pos]) {
-			cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
-		}
-
-		if cursor.pos <= 0 do break
-
-		// Determine current character type.
-		current_rune, _ := utf8.decode_rune(buffer.data[cursor.pos:])
-		is_word := is_word_character(current_rune)
-
-		// Move backward through same-type characters.
-		for cursor.pos > 0 {
-			prev_pos := prev_rune_start(buffer.data[:], cursor.pos)
-			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
-
-			if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word {
-				break
-			}
-			cursor.pos = prev_pos
+		new_pos, found := buffer_find_previous_word_start(buffer, cursor.pos, .WORD)
+		if found {
+			cursor.pos = new_pos
+		} else if cursor.pos > 0 {
+			cursor.pos = 0
 		}
 
 		horizontal = true
 
 	case .WORD_RIGHT:
-		if cursor.pos >= len(buffer.data) do return
-		original_pos := cursor.pos
-
-		// Skip leading whitespace.
-		for cursor.pos < len(buffer.data) && is_whitespace_byte(buffer.data[cursor.pos]) do cursor.pos += 1
-
-		if cursor.pos >= len(buffer.data) do break
-
-		// Determine current character type.
-		current_rune, bytes_read := utf8.decode_rune(buffer.data[cursor.pos:])
-		if bytes_read == 0 do break
-		is_word := is_word_character(current_rune)
-
-		// Move through same-type characters.
-		for cursor.pos <= len(buffer.data) {
-			// See if we've hit a boundary.
-			r, n := utf8.decode_rune(buffer.data[cursor.pos:])
-			if n == 0 || is_whitespace_byte(buffer.data[cursor.pos]) || is_word_character(r) != is_word do break
-
-			cursor.pos += n
-		}
-
-		// Skip trailing whitespace.
-		for cursor.pos < len(buffer.data) && is_whitespace_byte(buffer.data[cursor.pos]) {
-			cursor.pos += 1
-		}
-
-		// Ensure minimal movement.
-		if cursor.pos == original_pos && cursor.pos < len(buffer.data) {
-			// Move at least one character for single-character words.
-			cursor.pos += 1
+		new_pos, found := buffer_find_next_word_start(buffer, cursor.pos, .WORD)
+		if found {
+			cursor.pos = new_pos
+		} else if cursor.pos < len(buffer.data) {
+			cursor.pos = len(buffer.data)
 		}
 
 		horizontal = true
 
 	case .WORD_END:
-		original_pos := cursor.pos
-		current_line_end := len(buffer.data)
-
-		if cursor.line < len(buffer.line_starts) - 1 {
-			current_line_end = buffer.line_starts[cursor.line + 1] - 1
+		new_pos, found := buffer_find_next_word_end(buffer, cursor.pos, .WORD)
+		if found {
+			cursor.pos = new_pos
+		} else if cursor.pos < len(buffer.data) {
+			cursor.pos = len(buffer.data) - 1
 		}
+		horizontal = true
 
-		// Move forward one character (if possible man).
-		if cursor.pos < current_line_end {
-			n_bytes := next_rune_length(buffer.data[:], cursor.pos)
-			cursor.pos += n_bytes
-		} else {
-			break // Already at line end.
+	case .BIG_WORD_RIGHT:
+		new_pos, found := buffer_find_next_word_start(buffer, cursor.pos, .BIG_WORD)
+		if found {
+			cursor.pos = new_pos
+		} else if cursor.pos < len(buffer.data) {
+			cursor.pos = len(buffer.data) // Move to end if no next word.
 		}
+		horizontal = true
 
-		// Skip whitespace forward.
-		for cursor.pos < current_line_end && is_whitespace_byte(buffer.data[cursor.pos]) {
-			cursor.pos += 1
+	case .BIG_WORD_END:
+		new_pos, found := buffer_find_next_word_end(buffer, cursor.pos, .BIG_WORD)
+		if found {
+			cursor.pos = new_pos
+		} else if cursor.pos < len(buffer.data) {
+			cursor.pos = len(buffer.data) - 1 // Move to last char if no next word end.
 		}
+		horizontal = true
 
-		if cursor.pos >= current_line_end do break
-
-		// Get current word type.
-		current_rune, _ := utf8.decode_rune(buffer.data[cursor.pos:])
-		current_class := is_word_character(current_rune)
-
-		// Find word end.
-		for cursor.pos < current_line_end {
-			r, n := utf8.decode_rune(buffer.data[cursor.pos:])
-			if n == 0 ||
-			   is_whitespace_byte(buffer.data[cursor.pos]) ||
-			   is_word_character(r) != current_class {
-				break
-			}
-			cursor.pos += n
-		}
-
-		// Step back to last valid position.
-		if cursor.pos > original_pos {
-			cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
-		}
-
-		// Clamp to line end.
-		if cursor.pos > current_line_end {
-			cursor.pos = current_line_end
+	case .BIG_WORD_LEFT:
+		new_pos, found := buffer_find_previous_word_start(buffer, cursor.pos, .BIG_WORD)
+		if found {
+			cursor.pos = new_pos
+		} else if cursor.pos > 0 {
+			cursor.pos = 0 // Move to start if no previous word.
 		}
 		horizontal = true
 
@@ -949,7 +920,7 @@ buffer_draw_visible_lines :: proc(
 	selection_active := window.mode == .VISUAL && cursor.sel != cursor.pos
 	max_val := max(cursor.sel, cursor.pos)
 	sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
-	sel_end := max_val + (max_val < len(buffer.data) ? 1 : 0)  // Only add 1 if max is within buffer.
+	sel_end := max_val + (max_val < len(buffer.data) ? 1 : 0) // Only add 1 if max is within buffer.
 	sel_end = min(sel_end, len(buffer.data))
 
 	// Validate selection indices when active.
@@ -1107,43 +1078,182 @@ buffer_mark_dirty :: proc(buffer: ^Buffer) {
 
 find_word_boundaries :: proc(buffer: ^Buffer, pos: int) -> (start: int, end: int) {
 	assert(buffer != nil, "Invalid buffer")
-    if pos < 0 || pos >= len(buffer.data) do return 0, 0
+	if pos < 0 || pos >= len(buffer.data) do return 0, 0
 
-    current_rune, _ := utf8.decode_rune(buffer.data[pos:])
-    is_whitespace := is_whitespace_rune(current_rune)
+	current_rune, _ := utf8.decode_rune(buffer.data[pos:])
+	is_whitespace := is_whitespace_rune(current_rune)
 
-    if is_whitespace {
-        // Select contiguous whitespace.
-        start = pos
-        for start > 0 {
-            prev_pos := prev_rune_start(buffer.data[:], start)
-            r, _ := utf8.decode_rune(buffer.data[prev_pos:])
-            if !is_whitespace_rune(r) do break
-            start = prev_pos
-        }
-        end = pos
-        for end < len(buffer.data) {
-            r, n := utf8.decode_rune(buffer.data[end:])
-            if n == 0 || !is_whitespace_rune(r) do break
-            end += n
-        }
-    } else {
-        // Select the word.
-        is_word := is_word_character(current_rune)
-        start = pos
-        for start > 0 {
-            prev_pos := prev_rune_start(buffer.data[:], start)
-            r, _ := utf8.decode_rune(buffer.data[prev_pos:])
-            if is_word_character(r) != is_word do break
-            start = prev_pos
-        }
-        end = pos
-        for end < len(buffer.data) {
-            r, n := utf8.decode_rune(buffer.data[end:])
-            if n == 0 || is_word_character(r) != is_word do break
-            end += n
-        }
+	if is_whitespace {
+		// Select contiguous whitespace.
+		start = pos
+		for start > 0 {
+			prev_pos := prev_rune_start(buffer.data[:], start)
+			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+			if !is_whitespace_rune(r) do break
+			start = prev_pos
+		}
+		end = pos
+		for end < len(buffer.data) {
+			r, n := utf8.decode_rune(buffer.data[end:])
+			if n == 0 || !is_whitespace_rune(r) do break
+			end += n
+		}
+	} else {
+		// Select the word.
+		is_word := is_word_character(current_rune)
+		start = pos
+		for start > 0 {
+			prev_pos := prev_rune_start(buffer.data[:], start)
+			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+			if is_word_character(r) != is_word do break
+			start = prev_pos
+		}
+		end = pos
+		for end < len(buffer.data) {
+			r, n := utf8.decode_rune(buffer.data[end:])
+			if n == 0 || is_word_character(r) != is_word do break
+			end += n
+		}
+	}
+
+	return start, end
+}
+
+// Finds the start of the next word based on word_type
+buffer_find_next_word_start :: proc(
+	buffer: ^Buffer,
+	pos: int,
+	word_type: Word_Type,
+) -> (
+	int,
+	bool,
+) {
+	assert(pos >= 0 && pos <= len(buffer.data), "pos out of range")
+	if pos >= len(buffer.data) do return pos, false
+
+	char_index := pos
+	total_bytes := len(buffer.data)
+
+	// Get current character and its class.
+	c, n := utf8.decode_rune(buffer.data[char_index:])
+	assert(n > 0, "Invalid UTF-8 sequence at initial pos")
+	if n == 0 do return char_index, false
+	current_class := get_char_class(c, word_type)
+
+	// Skip characters of the same class.
+	for char_index < total_bytes {
+		r, n := utf8.decode_rune(buffer.data[char_index:])
+		if n == 0 do break
+		class := get_char_class(r, word_type)
+		if class != current_class do break
+		char_index += n
+	}
+
+	// Skip over whitespace.
+	for char_index < total_bytes {
+		r, n := utf8.decode_rune(buffer.data[char_index:])
+		if n == 0 do break
+		if get_char_class(r, word_type) != .WHITESPACE do break
+		char_index += n
+	}
+
+	if char_index >= total_bytes do return total_bytes, false
+	return char_index, true
+}
+
+// Finds the start of the previous word based on word_type.
+buffer_find_previous_word_start :: proc(
+    buffer: ^Buffer,
+    pos: int,
+    word_type: Word_Type,
+) -> (
+    int,
+    bool,
+) {
+	assert(pos >= 0 && pos <= len(buffer.data), "pos out of range")
+    if pos <= 0 do return 0, false
+
+    char_index := pos
+
+    // Move back one rune to examine the previous character.
+    char_index = prev_rune_start(buffer.data[:], char_index)
+	assert(char_index >= 0, "char_index out of bounds after moving back")
+
+    // Skip trailing whitespace.
+    for char_index > 0 {
+        r, n := utf8.decode_rune(buffer.data[char_index:])
+        if n == 0 do break
+        if get_char_class(r, word_type) != .WHITESPACE do break
+        char_index = prev_rune_start(buffer.data[:], char_index)
     }
 
-    return start, end
+    if char_index == 0 {
+        r, _ := utf8.decode_rune(buffer.data[char_index:])
+        if get_char_class(r, word_type) == .WHITESPACE do return 0, false
+        return 0, true
+    }
+
+    // Get the class of the character at the new position.
+    r, _ := utf8.decode_rune(buffer.data[char_index:])
+    current_class := get_char_class(r, word_type)
+
+    // Move back to the start of this word (stop when class changes or whitespace is hit).
+    start_pos := char_index
+    for char_index > 0 {
+        prev_pos := prev_rune_start(buffer.data[:], char_index)
+        r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+        next_class := get_char_class(r, word_type)
+        if next_class != current_class || next_class == .WHITESPACE {
+            break
+        }
+        start_pos = prev_pos
+        char_index = prev_pos
+    }
+
+    return start_pos, true
 }
+
+// Finds the end of the next word based on word_type.
+buffer_find_next_word_end :: proc(buffer: ^Buffer, pos: int, word_type: Word_Type) -> (int, bool) {
+	assert(pos >= 0 && pos <= len(buffer.data), "pos out of range")
+	if pos >= len(buffer.data) do return pos, false
+
+	char_index := pos
+	total_bytes := len(buffer.data)
+
+	// Move forward one character if possible.
+	if char_index + 1 < total_bytes {
+		char_index += next_rune_length(buffer.data[:], char_index)
+		assert(char_index <= total_bytes, "char_index out of bounds after moving forward")
+	} else {
+		return char_index, false
+	}
+
+	// Skip whitespace.
+	for char_index < total_bytes {
+		r, n := utf8.decode_rune(buffer.data[char_index:])
+		if n == 0 do break
+		if get_char_class(r, word_type) != .WHITESPACE do break
+		char_index += n
+	}
+
+	if char_index >= total_bytes do return total_bytes - 1, false
+
+	// Get the class of the current character.
+	r, _ := utf8.decode_rune(buffer.data[char_index:])
+	current_class := get_char_class(r, word_type)
+
+	last_char_index := char_index
+
+	// Move to the end of the current class sequence.
+	for char_index < total_bytes {
+		r, n := utf8.decode_rune(buffer.data[char_index:])
+		if n == 0 do break
+		if get_char_class(r, word_type) != current_class do break
+		last_char_index = char_index
+		char_index += n
+	}
+
+	return last_char_index, true
+}
+

@@ -111,9 +111,23 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if press_and_repeat(.V) do change_mode(p, .VISUAL)
 
 			if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
-			if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
-			if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
-			if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
+
+			if press_and_repeat(.B) {
+				if shift_pressed do buffer_move_cursor(p.current_window, .BIG_WORD_LEFT)
+				else do buffer_move_cursor(p.current_window, .WORD_LEFT)
+			} 
+
+			if press_and_repeat(.W) {
+				if shift_pressed do buffer_move_cursor(p.current_window, .BIG_WORD_RIGHT)
+				else if ctrl_pressed do window_remove_split(p)
+				else do buffer_move_cursor(p.current_window, .WORD_RIGHT)
+			} 
+
+			if press_and_repeat(.E) {
+				if shift_pressed do buffer_move_cursor(p.current_window, .BIG_WORD_END)
+				else do buffer_move_cursor(p.current_window, .WORD_END)
+			} 
+			
 			if press_and_repeat(.X) do buffer_delete_forward_char(p.current_window)
 			if press_and_repeat(.S) {
 				buffer_delete_forward_char(p.current_window)
@@ -149,9 +163,6 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.TAB) {
 				if ctrl_pressed do window_switch_focus(p)
-			}
-			if press_and_repeat(.W) {
-				if ctrl_pressed do window_remove_split(p)
 			}
 
 			if press_and_repeat(.O) {
