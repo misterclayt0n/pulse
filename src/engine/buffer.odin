@@ -417,6 +417,20 @@ buffer_delete_selection :: proc(window: ^Window) {
 	assert(cursor.sel == cursor.pos, "Selection not reset")
 }
 
+buffer_delete_range :: proc(window: ^Window, start, end: int) {
+	assert(start >= 0 && start <= end && end <= len(window.buffer.data), "Invalid range for deletion")
+
+	// Shift the remaining buffer content to remove the range.
+	copy(window.buffer.data[start:], window.buffer.data[end:])
+
+	// Resize the buffer to reflect the deletion
+	resize(&window.buffer.data, len(window.buffer.data) - (end - start))
+
+	buffer_mark_dirty(window.buffer)
+
+	buffer_update_line_starts(window, start)
+}
+
 buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
     using window
 

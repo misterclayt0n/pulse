@@ -12,6 +12,7 @@ Known_Commands :: []string {
 	"yy", // TODO: Yank line.
 	" w", // <leader>w - save file
 	"iw", // Select inner word in visual mode.
+	"ciw", // Change inner word.
 }
 
 is_complete_command :: proc(cmd: string) -> bool {
@@ -42,20 +43,9 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 	case " w":
 		status_line_log(&p.status_line, "Saving file from leader w")
 	case "iw":
-		if p.current_window.mode == .VISUAL {
-			start, end := find_word_boundaries(p.current_window.buffer, p.current_window.cursor.pos)
-
-			if start < end {
-				p.current_window.cursor.sel = start
-				if end > start {
-					// Move cursor to the last character of the word.
-					last_rune_start := prev_rune_start(p.current_window.buffer.data[:], end)
-					p.current_window.cursor.pos = last_rune_start
-				} else {
-					p.current_window.cursor.pos = start
-				}
-			}
-		}
+		select_inner_word(p)
+	case "ciw":
+		change_inner_word(p)
 	}
 }
 
@@ -90,3 +80,38 @@ execute_command :: proc(p: ^Pulse) {
 		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}
 }
+
+// 
+// Specific commands 
+//
+
+@(private)
+select_inner_word :: proc(p: ^Pulse) {
+	assert(p.current_window.mode == .VISUAL, "Cannot select inner mode if not in visual mode")
+	start, end := find_word_boundaries(p.current_window.buffer, p.current_window.cursor.pos)
+
+	if start < end {
+		p.current_window.cursor.sel = start
+		if end > start {
+			// Move cursor to the last character of the word.
+			last_rune_start := prev_rune_start(p.current_window.buffer.data[:], end)
+			p.current_window.cursor.pos = last_rune_start
+		} else {
+			p.current_window.cursor.pos = start
+		}
+	}
+}
+
+@(private)
+change_inner_word :: proc(p: ^Pulse) {
+	assert(p.current_window.mode == .NORMAL, "Need to be in normal mode to use this motion")
+	start, end := find_word_boundaries(p.current_window.buffer, p.current_window.cursor.pos)
+
+	if start < end {
+		// Delete the word.
+		buffer_delete_range(p.current_window, start, end)
+		p.current_window.cursor.pos = start
+		change_mode(p, .INSERT)
+	}
+}
+

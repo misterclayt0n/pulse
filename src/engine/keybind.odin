@@ -50,6 +50,7 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 	}
 }
 
+// REFACTOR? This code is ugly but sometimes ugly code is the one who works.
 vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(p.keymap.mode == .VIM, "Keybind mode must be set to vim in order to update it")
 
@@ -59,100 +60,104 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 
 		// Default movements between all modes.
-		if press_and_repeat(.LEFT) do buffer_move_cursor(p.current_window, .LEFT)
-		if press_and_repeat(.RIGHT) do buffer_move_cursor(p.current_window, .RIGHT)
-		if press_and_repeat(.UP) do buffer_move_cursor(p.current_window, .UP)
-		if press_and_repeat(.DOWN) do buffer_move_cursor(p.current_window, .DOWN)
-		if press_and_repeat(.DELETE) do buffer_delete_forward_char(p.current_window)
-		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
-		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
+		// Only execute "normal" commands if command buffer is empty.
+		// These are the single key motions basically.
+		if len(p.keymap.vim_state.normal_cmd_buffer) == 0 {
+			if press_and_repeat(.LEFT) do buffer_move_cursor(p.current_window, .LEFT)
+			if press_and_repeat(.RIGHT) do buffer_move_cursor(p.current_window, .RIGHT)
+			if press_and_repeat(.UP) do buffer_move_cursor(p.current_window, .UP)
+			if press_and_repeat(.DOWN) do buffer_move_cursor(p.current_window, .DOWN)
+			if press_and_repeat(.DELETE) do buffer_delete_forward_char(p.current_window)
+			if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
+			if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
 
-		// HJKL.
-		if press_and_repeat(.H) {
-			if ctrl_pressed do window_focus_left(p)
-			else do buffer_move_cursor(p.current_window, .LEFT)
-		}
+			// HJKL.
+			if press_and_repeat(.H) {
+				if ctrl_pressed do window_focus_left(p)
+				else do buffer_move_cursor(p.current_window, .LEFT)
+			}
 
-		if press_and_repeat(.J) {
-			if ctrl_pressed do window_focus_bottom(p)
-			else do buffer_move_cursor(p.current_window, .DOWN)
-		}
+			if press_and_repeat(.J) {
+				if ctrl_pressed do window_focus_bottom(p)
+				else do buffer_move_cursor(p.current_window, .DOWN)
+			}
 
-		if press_and_repeat(.K) {
-			if ctrl_pressed do window_focus_top(p)
-			else do buffer_move_cursor(p.current_window, .UP)
-		}
+			if press_and_repeat(.K) {
+				if ctrl_pressed do window_focus_top(p)
+				else do buffer_move_cursor(p.current_window, .UP)
+			}
 
-		if press_and_repeat(.L) {
-			if ctrl_pressed do window_focus_right(p)
-			else do buffer_move_cursor(p.current_window, .RIGHT)
-		}
+			if press_and_repeat(.L) {
+				if ctrl_pressed do window_focus_right(p)
+				else do buffer_move_cursor(p.current_window, .RIGHT)
+			}
 
-		// Mode changing.
-		// REFACTOR: These focus bindings kind of suck in my opinion.
-		if press_and_repeat(.I) {
-			if shift_pressed {
-				buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-				change_mode(p, .INSERT)
-			} else do change_mode(p, .INSERT)
-		}
+			// Mode changing.
+			// REFACTOR: These focus bindings kind of suck in my opinion.
+			if press_and_repeat(.I) {
+				if shift_pressed {
+					buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+					change_mode(p, .INSERT)
+				} else do change_mode(p, .INSERT)
+			}
 
-		if press_and_repeat(.A) {
-			if shift_pressed {
-				buffer_move_cursor(p.current_window, .LINE_END)
-				append_right_motion(p)
-			} else do append_right_motion(p)
-		}
+			if press_and_repeat(.A) {
+				if shift_pressed {
+					buffer_move_cursor(p.current_window, .LINE_END)
+					append_right_motion(p)
+				} else do append_right_motion(p)
+			}
 
-		if press_and_repeat(.V) do change_mode(p, .VISUAL)
+			if press_and_repeat(.V) do change_mode(p, .VISUAL)
 
-		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
-		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
-		if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
-		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
-		if press_and_repeat(.X) do buffer_delete_forward_char(p.current_window)
-		if press_and_repeat(.S) {
-			buffer_delete_forward_char(p.current_window)
-			change_mode(p, .INSERT)
-		}
-
-		if press_and_repeat(.D) {
-			if shift_pressed do buffer_delete_to_line_end(p.current_window)
-		}
-
-		if press_and_repeat(.C) {
-			if shift_pressed {
-				buffer_delete_to_line_end(p.current_window)
+			if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
+			if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
+			if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
+			if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
+			if press_and_repeat(.X) do buffer_delete_forward_char(p.current_window)
+			if press_and_repeat(.S) {
+				buffer_delete_forward_char(p.current_window)
 				change_mode(p, .INSERT)
 			}
-		}
 
-		if press_and_repeat(.MINUS) {
-			if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-		}
+			if press_and_repeat(.D) {
+				if shift_pressed do buffer_delete_to_line_end(p.current_window)
+			}
 
-		if press_and_repeat(.SEMICOLON) {
-			if shift_pressed do change_mode(p, .COMMAND)
-		}
+			if press_and_repeat(.C) {
+				if shift_pressed {
+					buffer_delete_to_line_end(p.current_window)
+					change_mode(p, .INSERT)
+				}
+			}
 
-		if press_and_repeat(.FOUR) {
-			if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
-		}
+			if press_and_repeat(.MINUS) {
+				if shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+			}
 
-		if press_and_repeat(.G) {
-			if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
-		}
+			if press_and_repeat(.SEMICOLON) {
+				if shift_pressed do change_mode(p, .COMMAND)
+			}
 
-		if press_and_repeat(.TAB) {
-			if ctrl_pressed do window_switch_focus(p)
-		}
-		if press_and_repeat(.W) {
-			if ctrl_pressed do window_remove_split(p)
-		}
+			if press_and_repeat(.FOUR) {
+				if shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
+			}
 
-		if press_and_repeat(.O) {
-			if shift_pressed do insert_newline(p, true)
-			else do insert_newline(p, false)
+			if press_and_repeat(.G) {
+				if shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
+			}
+
+			if press_and_repeat(.TAB) {
+				if ctrl_pressed do window_switch_focus(p)
+			}
+			if press_and_repeat(.W) {
+				if ctrl_pressed do window_remove_split(p)
+			}
+
+			if press_and_repeat(.O) {
+				if shift_pressed do insert_newline(p, true)
+				else do insert_newline(p, false)
+			}
 		}
 
 		if press_and_repeat(.F2) {
@@ -198,20 +203,20 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		// Only execute "normal" commands if command buffer is empty.
 		if len(p.keymap.vim_state.normal_cmd_buffer) == 0 {
-    		if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
-    		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(p.current_window, .RIGHT)
-    		if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(p.current_window, .UP)
-    		if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(p.current_window, .DOWN)
-    		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
-    		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
-    		if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
-    		if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
-    		if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
-    		if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
-            if press_and_repeat(.FOUR) && shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
-            if press_and_repeat(.MINUS) && shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
-            if press_and_repeat(.G) && shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
-        }
+			if press_and_repeat(.LEFT) || press_and_repeat(.H) do buffer_move_cursor(p.current_window, .LEFT)
+			if press_and_repeat(.RIGHT) || press_and_repeat(.L) do buffer_move_cursor(p.current_window, .RIGHT)
+			if press_and_repeat(.UP) || press_and_repeat(.K) do buffer_move_cursor(p.current_window, .UP)
+			if press_and_repeat(.DOWN) || press_and_repeat(.J) do buffer_move_cursor(p.current_window, .DOWN)
+			if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
+			if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
+			if press_and_repeat(.B) do buffer_move_cursor(p.current_window, .WORD_LEFT)
+			if press_and_repeat(.W) do buffer_move_cursor(p.current_window, .WORD_RIGHT)
+			if press_and_repeat(.E) do buffer_move_cursor(p.current_window, .WORD_END)
+			if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
+			if press_and_repeat(.FOUR) && shift_pressed do buffer_move_cursor(p.current_window, .LINE_END)
+			if press_and_repeat(.MINUS) && shift_pressed do buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+			if press_and_repeat(.G) && shift_pressed do buffer_move_cursor(p.current_window, .FILE_END)
+		}
 
 		// Selection operations.
 		if press_and_repeat(.D) {
@@ -255,6 +260,8 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
+		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
+
 		// Default movements between all modes.
 		if press_and_repeat(.LEFT) do buffer_move_cursor(p.current_window, .LEFT)
 		if press_and_repeat(.RIGHT) do buffer_move_cursor(p.current_window, .RIGHT)
@@ -264,7 +271,6 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.HOME) do buffer_move_cursor(p.current_window, .LINE_START)
 		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
 
-		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
 		if press_and_repeat(.ENTER) do buffer_insert_char(p.current_window, '\n')
 		if press_and_repeat(.BACKSPACE) {
 			if ctrl_pressed || alt_pressed do buffer_delete_word(p.current_window)
@@ -276,6 +282,8 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			buffer_insert_char(p.current_window, rune(key))
 			key = rl.GetCharPressed()
 		}
+		clear(&p.keymap.vim_state.normal_cmd_buffer)
+
 	case .COMMAND:
 		using p.status_line
 		key := rl.GetCharPressed()
