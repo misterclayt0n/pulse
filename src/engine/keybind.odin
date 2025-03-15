@@ -108,7 +108,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 				} else do append_right_motion(p)
 			}
 
-			if press_and_repeat(.V) do change_mode(p, .VISUAL)
+			if press_and_repeat(.V) {
+				p.current_window.cursor.sel = p.current_window.cursor.pos
+				change_mode(p, .VISUAL)
+			} 
 
 			if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
 
@@ -444,7 +447,8 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		}
 	case .VISUAL:
 		mode = .VISUAL
-		cursor.sel = cursor.pos // Set selection start.
+		// Only set sel = pos if sel hasn't been set (e.g. entering via 'v')
+		if cursor.sel == 0 do cursor.sel = cursor.pos 
 	}
 }
 

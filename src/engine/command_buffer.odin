@@ -2,6 +2,7 @@ package engine
 
 import "core:fmt"
 import "core:strings"
+import "core:unicode/utf8"
 
 // NOTE: Leader key is hard coded as space.
 Known_Commands :: []string {
@@ -13,6 +14,16 @@ Known_Commands :: []string {
 	" w", // <leader>w - save file
 	"iw", // Select inner word in visual mode.
 	"ciw", // Change inner word.
+	"i(",
+	"i[",
+	"i{",
+	"i\"",
+	"i'",
+	"ci(",
+	"ci[",
+	"ci{",
+	"ci\"",
+	"ci'",
 }
 
 is_complete_command :: proc(cmd: string) -> bool {
@@ -46,6 +57,26 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 		select_inner_word(p)
 	case "ciw":
 		change_inner_word(p)
+	case "i(":
+        select_inner_delimiter(p, '(')
+    case "i[":
+        select_inner_delimiter(p, '[')
+    case "i{":
+        select_inner_delimiter(p, '{')
+    case "i\"":
+        select_inner_delimiter(p, '"')
+    case "i'":
+        select_inner_delimiter(p, '\'')
+    case "ci(":
+        change_inner_delimiter(p, '(')
+    case "ci[":
+        change_inner_delimiter(p, '[')
+    case "ci{":
+        change_inner_delimiter(p, '{')
+    case "ci\"":
+        change_inner_delimiter(p, '"')
+    case "ci'":
+        change_inner_delimiter(p, '\'')
 	}
 }
 
@@ -114,4 +145,3 @@ change_inner_word :: proc(p: ^Pulse) {
 		change_mode(p, .INSERT)
 	}
 }
-
