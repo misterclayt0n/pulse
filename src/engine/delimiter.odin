@@ -161,6 +161,10 @@ find_inner_delimiter_range :: proc(
 }
 
 get_matching_delimiters :: proc(delim: rune) -> (open: rune, close: rune) {
+	if delim == '"' || delim == '\'' {
+		return delim, delim
+	}
+	
 	for pair in Matching_Delimiters {
 		if delim == pair.open || delim == pair.close {
 			return pair.open, pair.close
