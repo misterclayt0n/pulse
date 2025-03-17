@@ -636,7 +636,6 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 	case .LINE_END:
 		current_line := cursor.line
 		current_line_start := buffer.line_starts[current_line]
-		current_line_length := buffer_line_length(buffer, current_line)
 
 		// Handle CLI buffers differently.
 		if buffer.is_cli {
@@ -645,22 +644,17 @@ buffer_move_cursor :: proc(window: ^Window, movement: Cursor_Movement) {
 			break
 		}
 
-		// Handle empty lines differently.
-		if current_line_length == 0 {
-			cursor.pos = current_line_start
+		if cursor.line < len(buffer.line_starts) - 1 {
+			line_end := buffer.line_starts[cursor.line + 1] // Position after newline.
+			if line_end > current_line_start + 1 do cursor.pos = prev_rune_start(buffer.data[:], line_end - 1)
+			else do cursor.pos = current_line_start
 		} else {
-			if current_line < len(buffer.line_starts) - 1 {
-				line_end_pos := buffer.line_starts[current_line + 1] - 1
-				// Only adjust if we have a newline character.
-				if line_end_pos >= 0 && buffer.data[line_end_pos] == '\n' {
-					cursor.pos = line_end_pos - 1
-				} else {
-					cursor.pos = line_end_pos
-				}
-			} else {
-				cursor.pos = len(buffer.data)
-			}
+			// Last line has characters.
+			if len(buffer.data) > current_line_start do cursor.pos = prev_rune_start(buffer.data[:], len(buffer.data))
+			// Last line is empty.
+			else do cursor.pos = current_line_start
 		}
+		
 		horizontal = true
 	case .WORD_LEFT:
 		new_pos, found := buffer_find_previous_word_start(buffer, cursor.pos, .WORD)
