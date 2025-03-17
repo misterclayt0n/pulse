@@ -111,26 +111,26 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if press_and_repeat(.V) {
 				p.current_window.cursor.sel = p.current_window.cursor.pos
 				change_mode(p, .VISUAL)
-			} 
+			}
 
 			if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
 
 			if press_and_repeat(.B) {
 				if shift_pressed do buffer_move_cursor(p.current_window, .BIG_WORD_LEFT)
 				else do buffer_move_cursor(p.current_window, .WORD_LEFT)
-			} 
+			}
 
 			if press_and_repeat(.W) {
 				if shift_pressed do buffer_move_cursor(p.current_window, .BIG_WORD_RIGHT)
 				else if ctrl_pressed do window_remove_split(p)
 				else do buffer_move_cursor(p.current_window, .WORD_RIGHT)
-			} 
+			}
 
 			if press_and_repeat(.E) {
 				if shift_pressed do buffer_move_cursor(p.current_window, .BIG_WORD_END)
 				else do buffer_move_cursor(p.current_window, .WORD_END)
-			} 
-			
+			}
+
 			if press_and_repeat(.X) do buffer_delete_forward_char(p.current_window)
 			if press_and_repeat(.S) {
 				buffer_delete_forward_char(p.current_window)
@@ -194,14 +194,16 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			defer delete(cmd_str)
 
 			// Check and execute the command
-			if is_complete_command(cmd_str) {
+			if is_command(p.current_window, cmd_str) {
 				execute_normal_command(p, cmd_str)
+				p.current_window.cursor.color = CURSOR_COLOR
 				clear(&p.keymap.vim_state.normal_cmd_buffer)
 			} else if !is_prefix_of_command(cmd_str) {
 				// NOTE: Here we constantly clear the command buffer array if we cannot find a
 				// valid command sequence, which include any normal command (h, j, k, l, etc).
 				// Maybe some performance considerations should be made about
 				// this, but for now (06/03/25) I have not seen any visual impacts.
+				p.current_window.cursor.color = CURSOR_COLOR
 				clear(&p.keymap.vim_state.normal_cmd_buffer)
 			}
 		}
@@ -258,7 +260,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			defer delete(cmd_str)
 
 			// Check and execute the command
-			if is_complete_command(cmd_str) {
+			if is_command(p.current_window, cmd_str) {
 				execute_normal_command(p, cmd_str)
 				clear(&p.keymap.vim_state.normal_cmd_buffer)
 			} else if !is_prefix_of_command(cmd_str) {
@@ -448,7 +450,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 	case .VISUAL:
 		mode = .VISUAL
 		// Only set sel = pos if sel hasn't been set (e.g. entering via 'v')
-		if cursor.sel == 0 do cursor.sel = cursor.pos 
+		if cursor.sel == 0 do cursor.sel = cursor.pos
 	}
 }
 
@@ -501,3 +503,4 @@ insert_newline :: proc(p: ^Pulse, above: bool) {
 		change_mode(p, .INSERT)
 	}
 }
+

@@ -54,7 +54,7 @@ window_init :: proc(
 			col           = 0,
 			preferred_col = -1,
 			style         = .BLOCK,
-			color         = rl.GRAY,
+			color         = CURSOR_COLOR,
 			blink         = false, // FIX: This shit.
 		},
 		mode = .NORMAL,

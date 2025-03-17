@@ -2,6 +2,7 @@ package engine
 
 import "core:fmt"
 import "core:strings"
+import rl "vendor:raylib"
 import "core:unicode/utf8"
 
 // NOTE: Leader key is hard coded as space.
@@ -31,9 +32,15 @@ Known_Commands :: []string {
 	"di'",
 }
 
-is_complete_command :: proc(cmd: string) -> bool {
+is_command :: proc(window: ^Window, cmd: string) -> bool {
+	if window.mode == .NORMAL && (cmd == "d" || cmd == "g" || cmd == "c") {
+		window.cursor.color = COMMAND_BUFFER_CURSOR_COLOR
+	}
+	
 	for known in Known_Commands {
-		if cmd == known do return true
+		if cmd == known {
+			return true
+		} 
 	}
 
 	return false

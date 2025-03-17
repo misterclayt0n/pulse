@@ -884,7 +884,7 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 			rl.DrawRectangleLinesEx(
 				rl.Rectangle{cursor_pos.x, cursor_pos.y, char_width, font_size},
 				1,
-				{cursor.color.r, cursor.color.g, cursor.color.b, 80}, // Slightly transparent.
+				{CURSOR_COLOR.r, CURSOR_COLOR.g, CURSOR_COLOR.b, 80}, // Slightly transparent.
 			)
 		}
 	case .UNDERSCORE:
