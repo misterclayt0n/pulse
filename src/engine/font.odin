@@ -85,7 +85,7 @@ load_font_with_codepoints :: proc(
 // 
 
 is_char_supported :: proc(char: rune) -> bool {
-	return !unicode.is_control(char)
+	return !unicode.is_control(char) || char == '\n'
 }
 
 // Returns the index of the start of the rune that ends at position `pos`.
