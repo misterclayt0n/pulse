@@ -152,3 +152,15 @@ change_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
 		change_mode(p, .INSERT)
 	}
 }
+
+delete_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
+	buffer := p.current_window.buffer
+	pos := p.current_window.cursor.pos
+	open_delim, close_delim := get_matching_delimiters(delim)
+	if open_delim == 0 || close_delim == 0 do return
+	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
+	if found {
+		buffer_delete_range(p.current_window, start, end)
+		p.current_window.cursor.pos = start
+	}
+}

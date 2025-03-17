@@ -24,6 +24,11 @@ Known_Commands :: []string {
 	"ci{",
 	"ci\"",
 	"ci'",
+	"di(",
+	"di[",
+	"di{",
+	"di\"",
+	"di'",
 }
 
 is_complete_command :: proc(cmd: string) -> bool {
@@ -77,6 +82,16 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         change_inner_delimiter(p, '"')
     case "ci'":
         change_inner_delimiter(p, '\'')
+    case "di(":
+        delete_inner_delimiter(p, '(')
+    case "di[":
+        delete_inner_delimiter(p, '[')
+    case "di{":
+        delete_inner_delimiter(p, '{')
+    case "di\"":
+        delete_inner_delimiter(p, '"')
+    case "di'":
+        delete_inner_delimiter(p, '\'')
 	}
 }
 
