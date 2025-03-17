@@ -2,6 +2,7 @@ package engine
 
 import "core:fmt"
 import "core:strings"
+import "core:unicode/utf8"
 import rl "vendor:raylib"
 
 Window :: struct {
@@ -113,8 +114,9 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	document_width := w.buffer.max_line_width + 2 * MARGIN_X
 
 	line_start := w.buffer.line_starts[w.cursor.line]
-	n := w.cursor.pos - line_start
-	text_width := f32(n) * font.char_width + f32(n - 1) * font.spacing
+	line_text := string(w.buffer.data[line_start:w.cursor.pos])
+	char_count := utf8.rune_count_in_string(line_text)
+	text_width := f32(char_count) * font.char_width + f32(max(0, char_count - 1)) * font.spacing
 	cursor_x := f32(MARGIN_X) + text_width
 
 	viewport_left := w.scroll.x
