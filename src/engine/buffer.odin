@@ -10,7 +10,6 @@ import "core:unicode/utf8"
 import rl "vendor:raylib"
 
 // Buffer stores text as an array of bytes.
-// TODO: Refactor this to use a rope?
 Buffer :: struct {
 	data:           [dynamic]u8, // Dynamic array of bytes that contains text.
 	line_starts:    [dynamic]int, // Indexes of the beginning of each line in the array byte.
@@ -1256,4 +1255,26 @@ buffer_find_next_word_end :: proc(buffer: ^Buffer, pos: int, word_type: Word_Typ
 
 	return last_char_index, true
 }
+
+buffer_update_cursor_line_col :: proc(window: ^Window) {
+	using window
+	pos := window.cursor.pos
+	line := 0 
+	col := 0 
+	current_pos := 0 
+
+	// Lopp through the buffer up to the cursor's position.
+	for current_pos < pos && current_pos < len(buffer.data) {
+		r, n := utf8.decode_rune(buffer.data[current_pos:])
+		if r == '\n' {
+			line += 1
+			col = 0
+		} else do col += 1
+		current_pos += n
+ 	}
+
+ 	window.cursor.line = line
+ 	window.cursor.col = col
+}
+
 

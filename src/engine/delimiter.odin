@@ -77,39 +77,87 @@ find_nearest_quote_right :: proc(buffer: ^Buffer, pos: int, quote: rune) -> int 
 	return -1
 }
 
-find_inner_delimiter_range :: proc(
-	buffer: ^Buffer,
-	pos: int,
-	open_delim, close_delim: rune,
-) -> (
-	start: int,
-	end: int,
-	found: bool,
-) {
-	if open_delim == close_delim { 	// Quotes.
-		left := find_nearest_quote_left(buffer, pos, open_delim)
-		if left == -1 do return 0, 0, false
-		right := find_nearest_quote_right(buffer, pos, close_delim)
-		if right == -1 do return 0, 0, false
-		if left < pos && pos < right {
-			_, n_open := utf8.decode_rune(buffer.data[left:])
-			start = left + n_open // Start after the opening quote.
-			end = right // End at the closing quote.
-			found = true
+find_next_open_delim :: proc(buffer: ^Buffer, pos: int, open_delim: rune) -> int {
+	current_pos := pos
+	for current_pos < len(buffer.data) {
+		r, n := utf8.decode_rune(buffer.data[current_pos:])
+		if r == open_delim {
+			return current_pos
 		}
-	} else { 	// Parentheses, brackets, etc.
-		left := find_enclosing_open_delim(buffer, pos, open_delim, close_delim)
-		if left == -1 do return 0, 0, false
-		right := find_enclosing_close_delim(buffer, pos, open_delim, close_delim)
-		if right == -1 do return 0, 0, false
-		if left < right {
-			_, n_open := utf8.decode_rune(buffer.data[left:])
-			start = left + n_open // Start after the opening delimiter.
-			end = right // End at the closing delimiter.
-			found = true
-		}
+		current_pos += n
 	}
-	return start, end, found
+	return -1 // Not found
+}
+
+find_inner_delimiter_range :: proc(
+    buffer: ^Buffer,
+    pos: int,
+    open_delim, close_delim: rune,
+) -> (
+    start: int,
+    end: int,
+    found: bool,
+) {
+    if open_delim == close_delim { // Quotes (e.g., " or ').
+        left := find_nearest_quote_left(buffer, pos, open_delim)
+        if left == -1 do return 0, 0, false
+        right := find_nearest_quote_right(buffer, pos, close_delim)
+        if right == -1 do return 0, 0, false
+        if left < pos && pos < right {
+            _, n_open := utf8.decode_rune(buffer.data[left:])
+            start = left + n_open // After the opening quote.
+            end = right // At the closing quote.
+            found = true
+        }
+    } else { // Parentheses, brackets, etc.
+        // Check if cursor is on a delimiter.
+        is_delim, is_open, delim := is_on_delimiter(buffer, pos)
+        if is_delim {
+            if is_open && delim == open_delim {
+                // On opening delimiter (e.g., cursor on '(').
+                r, n := utf8.decode_rune(buffer.data[pos:])
+                right := find_enclosing_close_delim(buffer, pos + n, open_delim, close_delim)
+                if right != -1 {
+                    start = pos + n // After the opening delimiter.
+                    end = right // At the closing delimiter.
+                    found = true
+                }
+            } else if !is_open && delim == close_delim {
+                // On closing delimiter (e.g., cursor on ')').
+                left := find_enclosing_open_delim(buffer, pos - 1, open_delim, close_delim)
+                if left != -1 {
+                    _, n_open := utf8.decode_rune(buffer.data[left:])
+                    start = left + n_open // After the opening delimiter.
+                    end = pos // At the closing delimiter.
+                    found = true
+                }
+            }
+        } else {
+            // Not on a delimiter, check if inside an enclosing pair.
+            left := find_enclosing_open_delim(buffer, pos, open_delim, close_delim)
+            right := find_enclosing_close_delim(buffer, pos, open_delim, close_delim)
+            if left != -1 && right != -1 && left < pos && pos < right {
+                // Inside a pair.
+                _, n_open := utf8.decode_rune(buffer.data[left:])
+                start = left + n_open // After the opening delimiter.
+                end = right // At the closing delimiter.
+                found = true
+            } else {
+                // Not inside a pair, find the next opening delimiter.
+                next_open := find_next_open_delim(buffer, pos, open_delim)
+                if next_open != -1 {
+                    _, n_open := utf8.decode_rune(buffer.data[next_open:])
+                    right := find_enclosing_close_delim(buffer, next_open + n_open, open_delim, close_delim)
+                    if right != -1 {
+                        start = next_open + n_open // After the opening delimiter.
+                        end = right // At the closing delimiter.
+                        found = true
+                    }
+                }
+            }
+        }
+    }
+    return start, end, found
 }
 
 get_matching_delimiters :: proc(delim: rune) -> (open: rune, close: rune) {
@@ -137,6 +185,7 @@ select_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
 		} else {
 			p.current_window.cursor.pos = start
 		}
+		buffer_update_cursor_line_col(p.current_window)
 	}
 }
 
@@ -149,6 +198,7 @@ change_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
 	if found {
 		buffer_delete_range(p.current_window, start, end)
 		p.current_window.cursor.pos = start
+		buffer_update_cursor_line_col(p.current_window)
 		change_mode(p, .INSERT)
 	}
 }
@@ -162,5 +212,25 @@ delete_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
 	if found {
 		buffer_delete_range(p.current_window, start, end)
 		p.current_window.cursor.pos = start
+		buffer_update_cursor_line_col(p.current_window)
 	}
 }
+
+//
+// Helpers
+// 
+
+// Helper function to check if cursor is on a delimiter
+is_on_delimiter :: proc(buffer: ^Buffer, pos: int) -> (is_delim: bool, is_open: bool, delim: rune) {
+    if pos >= len(buffer.data) do return false, false, 0
+    r, _ := utf8.decode_rune(buffer.data[pos:])
+    for pair in Matching_Delimiters {
+        if r == pair.open {
+            return true, true, r
+        } else if r == pair.close {
+            return true, false, r
+        }
+    }
+    return false, false, 0
+}
+
