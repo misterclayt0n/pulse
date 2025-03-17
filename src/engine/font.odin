@@ -14,16 +14,21 @@ Font :: struct {
 	char_width: f32,
 }
 
-Extra_Chars :: []rune{'ç'}
-
 // Returns a slice of runes for the ASCII range plus some extra runes.
 gen_ascii_plus :: proc() -> []rune {
-	ascii_start: rune = 32
-	ascii_end: rune = 126
-	extra: rune = 'ç'
+	// Unicode ranges.
+	ascii_start: rune = 32 // Start of printable ASCII.
+	ascii_end: rune = 126 // End of printable ASCII.
+	latin1_start: rune = 0xA0 // Start of Latin-1 Supplement (skip control chars).
+	latin1_end: rune = 0xFF // End of Latin-1 Supplement.
+	latin_extended_a_start: rune = 0x100 // Start of Latin Extended-A.
+	latin_extended_a_end: rune = 0x17F // End of Latin Extended-A.
 
-	// Total numbers of codepoints: ASCII count + 1 + extra character.
-	total := (ascii_end - ascii_start + 1) + 1
+	// Calculate total number of codepoints.
+	total :=
+		(ascii_end - ascii_start + 1) +
+		(latin1_end - latin1_start + 1) +
+		(latin_extended_a_end - latin_extended_a_start + 1) 
 	codepoints := make([]rune, total)
 	idx: int = 0
 
@@ -33,9 +38,15 @@ gen_ascii_plus :: proc() -> []rune {
 		idx += 1
 	}
 
-	// Append the extra codepoints.
-	for e in Extra_Chars {
-		codepoints[idx] = e
+	// Append Latin-1 Supplement characters
+	for cp in latin1_start ..= latin1_end {
+		codepoints[idx] = cp
+		idx += 1
+	}
+
+	// Append Latin Extended-A characters
+	for cp in latin_extended_a_start ..= latin_extended_a_end {
+		codepoints[idx] = cp
 		idx += 1
 	}
 
@@ -47,7 +58,7 @@ load_font_with_codepoints :: proc(
 	size: i32,
 	color: rl.Color,
 	allocator := context.allocator,
-	spacing : f32 = 2,
+	spacing: f32 = 2,
 ) -> Font {
 	codepoints := gen_ascii_plus()
 	file, err := strings.clone_to_cstring(file, allocator)
@@ -57,11 +68,11 @@ load_font_with_codepoints :: proc(
 	ray_font := rl.LoadFontEx(file, size, &codepoints[0], i32(len(codepoints)))
 
 	font := Font {
-		ray_font = ray_font,
-		size     = size,
-		spacing  = spacing,
-		color    = color,
-		char_width = rl.MeasureTextEx(ray_font, "M", f32(size), spacing).x
+		ray_font   = ray_font,
+		size       = size,
+		spacing    = spacing,
+		color      = color,
+		char_width = rl.MeasureTextEx(ray_font, "M", f32(size), spacing).x,
 	}
 
 	assert(font.size > 0, "Invalid font size")
@@ -74,17 +85,7 @@ load_font_with_codepoints :: proc(
 // 
 
 is_char_supported :: proc(char: rune) -> bool {
-	// Always allow newlines (handled separately in rendering).
-	if char == '\n' do return true
-
-	// Check the good ol ASCII range (32-126).
-	if char >= 32 && char <= 126 do return true
-
-	for c in Extra_Chars {
-		if char == c do return true
-	}
-
-	return false
+	return !unicode.is_control(char)
 }
 
 // Returns the index of the start of the rune that ends at position `pos`.
@@ -126,3 +127,4 @@ is_whitespace_rune :: proc(r: rune) -> bool {
 is_word_character :: proc(r: rune) -> bool {
 	return unicode.is_alpha(r) || unicode.is_digit(r) || r == '_'
 }
+
