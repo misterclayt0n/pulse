@@ -26,6 +26,7 @@ Known_Commands :: []string {
 	"ci{",
 	"ci\"",
 	"ci'",
+	"cip", // Change inner paragraph.
 	"di(",
 	"di[",
 	"di{",
@@ -81,6 +82,8 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         select_inner_delimiter(p, '"')
     case "i'":
         select_inner_delimiter(p, '\'')
+    case "ip":
+    	select_inner_paragraph(p)
     case "ci(":
         change_inner_delimiter(p, '(')
     case "ci[":
@@ -91,6 +94,8 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         change_inner_delimiter(p, '"')
     case "ci'":
         change_inner_delimiter(p, '\'')
+    case "cip":
+    	change_inner_paragraph(p)
     case "di(":
         delete_inner_delimiter(p, '(')
     case "di[":
@@ -101,8 +106,6 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         delete_inner_delimiter(p, '"')
     case "di'":
         delete_inner_delimiter(p, '\'')
-    case "ip":
-    	select_inner_paragraph(p)
     case "dip":
     	delete_inner_paragraph(p)
 	}
@@ -216,6 +219,28 @@ delete_inner_paragraph :: proc(p: ^Pulse) {
 		buffer_update_cursor_line_col(p.current_window)
 	}
 }
+@(private)
+change_inner_paragraph :: proc(p: ^Pulse) {
+	buffer := p.current_window.buffer
+	current_line := p.current_window.cursor.line
+	
+	start_line := find_paragraph_start(buffer, current_line)
+	end_line := find_paragraph_end(buffer, current_line)
+	
+	if start_line <= end_line {
+		start_pos := buffer.line_starts[start_line]
+		end_pos := len(buffer.data)
+		if end_line < len(buffer.line_starts) - 1 {
+			end_pos = buffer.line_starts[end_line + 1] // Include the newline.
+		}
+
+		buffer_delete_range(p.current_window, start_pos, end_pos)
+		p.current_window.cursor.pos = start_pos
+		buffer_update_cursor_line_col(p.current_window)
+		change_mode(p, .INSERT)
+	}
+}
+
 
 @(private)
 select_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
