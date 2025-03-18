@@ -48,6 +48,9 @@ Known_Commands :: []string {
     "ca{", 
     "ca\"",
     "ca'", 
+    "ap", 
+    "dap", 
+    "cap", 
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
@@ -102,18 +105,6 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         select_inner_delimiter(p, '\'')
     case "ip":
     	select_inner_paragraph(p)
-    	
-    case "a(":
-        select_around_delimiter(p, '(')
-    case "a[":
-        select_around_delimiter(p, '[')
-    case "a{":
-        select_around_delimiter(p, '{')
-    case "a\"":
-        select_around_delimiter(p, '"')
-    case "a'":
-        select_around_delimiter(p, '\'')
-        
     case "ci(":
         change_inner_delimiter(p, '(')
     case "ci[":
@@ -141,6 +132,16 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 
 	// Around commands.
     	
+    case "a(":
+        select_around_delimiter(p, '(')
+    case "a[":
+        select_around_delimiter(p, '[')
+    case "a{":
+        select_around_delimiter(p, '{')
+    case "a\"":
+        select_around_delimiter(p, '"')
+    case "a'":
+        select_around_delimiter(p, '\'')
     case "da(":
         delete_around_delimiter(p, '(')
     case "da[":
@@ -161,6 +162,12 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         change_around_delimiter(p, '"')
     case "ca'":
         change_around_delimiter(p, '\'')
+    case "ap":
+        select_inner_paragraph(p)
+    case "dap":
+        delete_inner_paragraph(p)
+    case "cap":
+        change_inner_paragraph(p)
     
 	}
 }
