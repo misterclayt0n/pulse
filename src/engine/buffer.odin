@@ -847,16 +847,17 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 		"line_start out of range in buffer_draw_cursor",
 	)
 
-	line_text := buffer.data[line_start:cursor_pos_clamped]
-	assert(len(line_text) >= 0, "Line text cannot be negative")
-
-	temp_text := make([dynamic]u8, len(line_text) + 1)
-	defer delete(temp_text)
-
-	copy(temp_text[:], line_text)
-	temp_text[len(line_text)] = 0
-	cursor_pos.x +=
-		rl.MeasureTextEx(font.ray_font, cstring(&temp_text[0]), f32(font.size), font.spacing).x
+	if cursor.pos > line_start {
+		line_text := buffer.data[line_start:cursor_pos_clamped]
+		assert(len(line_text) >= 0, "Line text cannot be negative")
+		temp_text := make([dynamic]u8, len(line_text) + 1)
+		defer delete(temp_text)
+		copy(temp_text[:], line_text)
+		temp_text[len(line_text)] = 0
+		cursor_pos.x += rl.MeasureTextEx(font.ray_font, cstring(&temp_text[0]), f32(font.size), font.spacing).x + 2 // NOTE: Add 2 for alignment.
+	} else {
+		// NOTE: For the first character, no text width to measure, so we can just use ctx.position as is.
+	}
 
 	if cursor.blink && (int(rl.GetTime() * 2) % 2 == 0) do return
 
