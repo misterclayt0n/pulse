@@ -20,7 +20,16 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [ ] Visual line mode.
 - [ ] Visual block mode (I probably want to develop this the way Zed does it, with multiple cursors).
 - [x] Command buffer (execute motions like "gg", "gd", etc)
-- [ ] In/out control (commands like "viw", "ciw", "vaw", etc)
+- [ ] In/out control: 
+    - [x] viw
+    - [x] vip
+    - [x] vi[delimiter]
+    - [x] ciw
+    - [x] cip
+    - [x] ci[delimiter]
+    - [x] diw
+    - [x] dip
+    - [x] di[delimiter]
 
 ### Emacs
 Emacs?

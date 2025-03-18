@@ -15,12 +15,12 @@ Known_Commands :: []string {
 	" w", // <leader>w - save file
 	"iw", // Select inner word.
 	"ip", // Select inner paragraph.
-	"ciw", // Change inner word.
 	"i(",
 	"i[",
 	"i{",
 	"i\"",
 	"i'",
+	"ciw", // Change inner word.
 	"ci(",
 	"ci[",
 	"ci{",
