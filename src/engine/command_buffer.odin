@@ -7,13 +7,14 @@ import "core:unicode/utf8"
 
 // NOTE: Leader key is hard coded as space.
 Known_Commands :: []string {
-	"gg", // TODO: Top of the buffer.
+	"gg", 
 	"gd", // TODO: Go to definition
 	"dd",
 	"cc",
 	"yy", // TODO: Yank line.
 	" w", // <leader>w - save file
-	"iw", // Select inner word in visual mode.
+	"iw", // Select inner word.
+	"ip", // Select inner paragraph.
 	"ciw", // Change inner word.
 	"i(",
 	"i[",
@@ -30,6 +31,7 @@ Known_Commands :: []string {
 	"di{",
 	"di\"",
 	"di'",
+	"dip", // Delete inner paragraph
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
@@ -99,6 +101,10 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         delete_inner_delimiter(p, '"')
     case "di'":
         delete_inner_delimiter(p, '\'')
+    case "ip":
+    	select_inner_paragraph(p)
+    case "dip":
+    	delete_inner_paragraph(p)
 	}
 }
 
@@ -167,3 +173,97 @@ change_inner_word :: proc(p: ^Pulse) {
 		change_mode(p, .INSERT)
 	}
 }
+
+@(private)
+select_inner_paragraph :: proc(p: ^Pulse) {
+	assert(p.current_window.mode == .VISUAL, "Must be in visual mode for vip")
+	buffer := p.current_window.buffer
+	current_line := p.current_window.cursor.line
+
+	start_line := find_paragraph_start(buffer, current_line)
+	end_line := find_paragraph_end(buffer, current_line)
+
+	if start_line <= end_line {
+		start_pos := buffer.line_starts[start_line]
+		end_pos := len(buffer.data)
+		if end_line < len(buffer.line_starts) - 1 {
+			end_pos = buffer.line_starts[end_line + 1] - 1 // End of last line.
+		}
+
+		p.current_window.cursor.sel = start_pos
+		p.current_window.cursor.pos = end_pos - 1 // Last character of the paragraph.
+		buffer_update_cursor_line_col(p.current_window)
+	}
+}
+
+@(private)
+delete_inner_paragraph :: proc(p: ^Pulse) {
+	buffer := p.current_window.buffer
+	current_line := p.current_window.cursor.line
+	
+	start_line := find_paragraph_start(buffer, current_line)
+	end_line := find_paragraph_end(buffer, current_line)
+	
+	if start_line <= end_line {
+		start_pos := buffer.line_starts[start_line]
+		end_pos := len(buffer.data)
+		if end_line < len(buffer.line_starts) - 1 {
+			end_pos = buffer.line_starts[end_line + 1] // Include the newline.
+		}
+
+		buffer_delete_range(p.current_window, start_pos, end_pos)
+		p.current_window.cursor.pos = start_pos
+		buffer_update_cursor_line_col(p.current_window)
+	}
+}
+
+@(private)
+select_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
+	assert(p.current_window.mode == .VISUAL, "Cannot select if not in visual mode")
+	buffer := p.current_window.buffer
+	pos := p.current_window.cursor.pos
+	open_delim, close_delim := get_matching_delimiters(delim)
+	if open_delim == 0 || close_delim == 0 do return
+	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
+
+	if found {
+		p.current_window.cursor.sel = start
+		if end > start {
+			last_rune_start := prev_rune_start(buffer.data[:], end)
+			p.current_window.cursor.pos = last_rune_start
+		} else {
+			p.current_window.cursor.pos = start
+		}
+		buffer_update_cursor_line_col(p.current_window)
+	}
+}
+
+@(private)
+change_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
+	buffer := p.current_window.buffer
+	pos := p.current_window.cursor.pos
+	open_delim, close_delim := get_matching_delimiters(delim)
+	if open_delim == 0 || close_delim == 0 do return
+	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
+	if found {
+		buffer_delete_range(p.current_window, start, end)
+		p.current_window.cursor.pos = start
+		buffer_update_cursor_line_col(p.current_window)
+		change_mode(p, .INSERT)
+	}
+}
+
+@(private)
+delete_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
+	buffer := p.current_window.buffer
+	pos := p.current_window.cursor.pos
+	open_delim, close_delim := get_matching_delimiters(delim)
+	if open_delim == 0 || close_delim == 0 do return
+	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
+	if found {
+		buffer_delete_range(p.current_window, start, end)
+		p.current_window.cursor.pos = start
+		buffer_update_cursor_line_col(p.current_window)
+	}
+}
+

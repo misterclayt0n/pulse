@@ -1,6 +1,7 @@
 package engine
 
 import "core:unicode/utf8"
+import "core:strings"
 
 Matching_Delimiters :: []struct {
 	open:  rune,
@@ -194,58 +195,11 @@ get_matching_delimiters :: proc(delim: rune) -> (open: rune, close: rune) {
 	return 0, 0 // Invalid delimiter.
 }
 
-select_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
-	assert(p.current_window.mode == .VISUAL, "Cannot select if not in visual mode")
-	buffer := p.current_window.buffer
-	pos := p.current_window.cursor.pos
-	open_delim, close_delim := get_matching_delimiters(delim)
-	if open_delim == 0 || close_delim == 0 do return
-	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
-
-	if found {
-		p.current_window.cursor.sel = start
-		if end > start {
-			last_rune_start := prev_rune_start(buffer.data[:], end)
-			p.current_window.cursor.pos = last_rune_start
-		} else {
-			p.current_window.cursor.pos = start
-		}
-		buffer_update_cursor_line_col(p.current_window)
-	}
-}
-
-change_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
-	buffer := p.current_window.buffer
-	pos := p.current_window.cursor.pos
-	open_delim, close_delim := get_matching_delimiters(delim)
-	if open_delim == 0 || close_delim == 0 do return
-	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
-	if found {
-		buffer_delete_range(p.current_window, start, end)
-		p.current_window.cursor.pos = start
-		buffer_update_cursor_line_col(p.current_window)
-		change_mode(p, .INSERT)
-	}
-}
-
-delete_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
-	buffer := p.current_window.buffer
-	pos := p.current_window.cursor.pos
-	open_delim, close_delim := get_matching_delimiters(delim)
-	if open_delim == 0 || close_delim == 0 do return
-	start, end, found := find_inner_delimiter_range(buffer, pos, open_delim, close_delim)
-	if found {
-		buffer_delete_range(p.current_window, start, end)
-		p.current_window.cursor.pos = start
-		buffer_update_cursor_line_col(p.current_window)
-	}
-}
-
 //
 // Helpers
 // 
 
-// Helper function to check if cursor is on a delimiter
+// Helper function to check if cursor is on a delimiter.
 is_on_delimiter :: proc(buffer: ^Buffer, pos: int) -> (is_delim: bool, is_open: bool, delim: rune) {
 	if pos >= len(buffer.data) do return false, false, 0
 	r, _ := utf8.decode_rune(buffer.data[pos:])
@@ -273,5 +227,45 @@ find_next_quote_pair :: proc(buffer: ^Buffer, pos: int, quote: rune) -> (first: 
 	second_quote_pos := find_nearest_quote_right(buffer, first_quote_pos + 1, quote) // Closing quote.
 	if second_quote_pos == -1 do return 0, 0, false
 	return first_quote_pos, second_quote_pos, true
+}
+
+find_paragraph_start :: proc(buffer: ^Buffer, current_line: int) -> int {
+	line := current_line
+	
+	// Move up until we hit a blank line or the start of the file.
+	for line > 0 && !is_blank_line(buffer, line - 1) do line -= 1 
+	
+	// Move down to the first non-blank line (start of paragraph).
+	for line < len(buffer.line_starts) && is_blank_line(buffer, line) do line += 1
+
+	return line
+}
+
+find_paragraph_end :: proc(buffer: ^Buffer, current_line: int) -> int {
+	line := current_line
+
+	// Move down until we hit a blank line or the end of the file.
+	for line < len(buffer.line_starts) - 1 && !is_blank_line(buffer, line + 1) do line += 1
+
+	// Move up to the last non-blank line (end of paragraph).
+	for line >= 0 && is_blank_line(buffer, line) do line -= 1
+
+	return max(line, 0) // Ensure we never go below 0.
+}
+
+is_blank_line :: proc(buffer: ^Buffer, line: int) -> bool {
+	if line < 0 || line > len(buffer.line_starts) do return true // Treat out-of-bounds as blank for boundary purposes.
+	start := buffer.line_starts[line]
+	end := len(buffer.data)
+	if line < len(buffer.line_starts) - 1 {
+		end = buffer.line_starts[line + 1 ] - 1 // Up to but not including the newline.
+	}
+
+	for i := start; i < end; i += 1 {
+		r, _ := utf8.decode_rune(buffer.data[i:])
+		if !strings.is_space(r) do return false // Found a non-whitespace character.
+	}
+
+	return true
 }
 

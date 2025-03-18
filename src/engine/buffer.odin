@@ -76,19 +76,6 @@ Char_Class :: enum {
 	PUNCTUATION,
 }
 
-get_char_class :: proc(r: rune, word_type: Word_Type) -> Char_Class {
-	switch word_type {
-	case .WORD:
-		if is_whitespace_rune(r) do return .WHITESPACE
-		else if is_word_character(r) do return .WORD
-		else do return .PUNCTUATION
-	case .BIG_WORD:
-		if is_whitespace_rune(r) do return .WHITESPACE
-		else do return .WORD // Everything non-whitespace is a word.
-	}
-	return .WHITESPACE // Default case, should not occur.
-}
-
 // 
 // Struct management
 // 
@@ -1272,4 +1259,17 @@ buffer_update_cursor_line_col :: proc(window: ^Window) {
  	window.cursor.col = col
 }
 
+
+get_char_class :: proc(r: rune, word_type: Word_Type) -> Char_Class {
+	switch word_type {
+	case .WORD:
+		if is_whitespace_rune(r) do return .WHITESPACE
+		else if is_word_character(r) do return .WORD
+		else do return .PUNCTUATION
+	case .BIG_WORD:
+		if is_whitespace_rune(r) do return .WHITESPACE
+		else do return .WORD // Everything non-whitespace is a word.
+	}
+	return .WHITESPACE // Default case, should not occur.
+}
 
