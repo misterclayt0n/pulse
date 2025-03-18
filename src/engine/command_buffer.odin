@@ -21,18 +21,33 @@ Known_Commands :: []string {
 	"i\"",
 	"i'",
 	"ciw", // Change inner word.
+	"cip", // Change inner paragraph.
 	"ci(",
 	"ci[",
 	"ci{",
 	"ci\"",
 	"ci'",
-	"cip", // Change inner paragraph.
 	"di(",
 	"di[",
 	"di{",
 	"di\"",
 	"di'",
 	"dip", // Delete inner paragraph
+    "a(", 
+    "a[", 
+    "a{", 
+    "a\"", 
+    "a'", 
+    "da(", 
+    "da[", 
+    "da{", 
+    "da\"",
+    "da'", 
+    "ca(", 
+    "ca[", 
+    "ca{", 
+    "ca\"",
+    "ca'", 
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
@@ -68,6 +83,9 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 		change_mode(p, .INSERT)
 	case " w":
 		status_line_log(&p.status_line, "Saving file from leader w")
+
+	// Inner commands.
+	
 	case "iw":
 		select_inner_word(p)
 	case "ciw":
@@ -84,6 +102,18 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         select_inner_delimiter(p, '\'')
     case "ip":
     	select_inner_paragraph(p)
+    	
+    case "a(":
+        select_around_delimiter(p, '(')
+    case "a[":
+        select_around_delimiter(p, '[')
+    case "a{":
+        select_around_delimiter(p, '{')
+    case "a\"":
+        select_around_delimiter(p, '"')
+    case "a'":
+        select_around_delimiter(p, '\'')
+        
     case "ci(":
         change_inner_delimiter(p, '(')
     case "ci[":
@@ -108,6 +138,30 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         delete_inner_delimiter(p, '\'')
     case "dip":
     	delete_inner_paragraph(p)
+
+	// Around commands.
+    	
+    case "da(":
+        delete_around_delimiter(p, '(')
+    case "da[":
+        delete_around_delimiter(p, '[')
+    case "da{":
+        delete_around_delimiter(p, '{')
+    case "da\"":
+        delete_around_delimiter(p, '"')
+    case "da'":
+        delete_around_delimiter(p, '\'')
+    case "ca(":
+        change_around_delimiter(p, '(')
+    case "ca[":
+        change_around_delimiter(p, '[')
+    case "ca{":
+        change_around_delimiter(p, '{')
+    case "ca\"":
+        change_around_delimiter(p, '"')
+    case "ca'":
+        change_around_delimiter(p, '\'')
+    
 	}
 }
 
@@ -144,7 +198,7 @@ execute_command :: proc(p: ^Pulse) {
 }
 
 // 
-// Specific commands 
+// Inner motions
 //
 
 @(private)
@@ -290,5 +344,62 @@ delete_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
 		p.current_window.cursor.pos = start
 		buffer_update_cursor_line_col(p.current_window)
 	}
+}
+
+// 
+// Around motions
+// 
+
+@(private)
+select_around_delimiter :: proc(p: ^Pulse, delim: rune) {
+    assert(p.current_window.mode == .VISUAL, "Cannot select if not in visual mode")
+    buffer := p.current_window.buffer
+    pos := p.current_window.cursor.pos
+    open_delim, close_delim := get_matching_delimiters(delim)
+    if open_delim == 0 || close_delim == 0 do return
+
+    start, end, found := find_around_delimiter_range(buffer, pos, open_delim, close_delim)
+    if found {
+    	p.current_window.cursor.sel = start
+    	if end > start {
+    		last_rune_start := prev_rune_start(buffer.data[:], end)
+    		p.current_window.cursor.pos = last_rune_start
+    	} else {
+    		p.current_window.cursor.pos = start
+    	} 
+
+    	buffer_update_cursor_line_col(p.current_window)
+    }
+}
+
+@(private)
+delete_around_delimiter :: proc(p: ^Pulse, delim: rune) {
+    buffer := p.current_window.buffer
+    pos := p.current_window.cursor.pos
+    open_delim, close_delim := get_matching_delimiters(delim)
+    if open_delim == 0 || close_delim == 0 do return
+
+    start, end, found := find_around_delimiter_range(buffer, pos, open_delim, close_delim)
+    if found {
+        buffer_delete_range(p.current_window, start, end)
+        p.current_window.cursor.pos = start
+        buffer_update_cursor_line_col(p.current_window)
+    }
+}
+
+@(private)
+change_around_delimiter :: proc(p: ^Pulse, delim: rune) {
+    buffer := p.current_window.buffer
+    pos := p.current_window.cursor.pos
+    open_delim, close_delim := get_matching_delimiters(delim)
+    if open_delim == 0 || close_delim == 0 do return
+
+    start, end, found := find_around_delimiter_range(buffer, pos, open_delim, close_delim)
+    if found {
+        buffer_delete_range(p.current_window, start, end)
+        p.current_window.cursor.pos = start
+        buffer_update_cursor_line_col(p.current_window)
+        change_mode(p, .INSERT)
+    }
 }
 
