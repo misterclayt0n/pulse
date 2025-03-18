@@ -22,14 +22,14 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [x] Command buffer (execute motions like "gg", "gd", etc)
 - [ ] In/out control: 
     - [x] viw
-    - [x] vip
-    - [x] vi[delimiter]
+    - [x] vip 
+    - [x] vi[delimiter]/va[delimiter]
     - [x] ciw
     - [x] cip
-    - [x] ci[delimiter]
+    - [x] ci[delimiter]/ca[delimiter]
     - [x] diw
     - [x] dip
-    - [x] di[delimiter]
+    - [x] di[delimiter]/da[delimiter]
 
 ### Emacs
 Emacs?
