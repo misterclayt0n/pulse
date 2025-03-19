@@ -186,6 +186,11 @@ buffer_insert_tab :: proc(window: ^Window, allocator := context.allocator) {
 	buffer_insert_text(window, indent_str)
 }
 
+buffer_insert_newline :: proc(window: ^Window, allocator := context.allocator) {
+    buffer_insert_char(window, '\n')
+    buffer_update_indentation(window, allocator)
+}
+
 buffer_delete_char :: proc(window: ^Window) {
 	using window
 	assert(len(buffer.data) >= 0, "Delete called on invalid buffer")
@@ -1255,6 +1260,69 @@ buffer_update_cursor_line_col :: proc(window: ^Window) {
  	window.cursor.col = col
 }
 
+// Updates the indentation of the current line based on the previous line's indentation
+// and content, typically called after editing operations that affect line structure.
+buffer_update_indentation :: proc(window: ^Window, allocator := context.allocator) {
+    using window
+    
+    if cursor.line <= 0 || cursor.line >= len(buffer.line_starts) do return
+
+    // Get the previous line.
+    prev_line := cursor.line - 1
+    line_start := buffer.line_starts[prev_line]
+    line_end := buffer.line_starts[prev_line + 1] - 1 if prev_line + 1 < len(buffer.line_starts) else len(buffer.data)
+
+    // Calculate base indentation from the previous line.
+    indent_end := line_start
+    for indent_end < line_end && buffer.data[indent_end] == ' ' {
+        indent_end += 1
+    }
+    base_indent := indent_end - line_start
+
+    // Check if the previous line ends with an opening delimiter.
+    extra_indent := 0
+    if line_end > line_start {
+        last_char := buffer.data[line_end - 1]
+        if last_char == '{' || last_char == '(' || last_char == '[' {
+            extra_indent = tab_width
+        }
+    }
+
+    // Calculate total desired indentation.
+    total_indent := base_indent + extra_indent
+
+    // Get the current line's start position.
+    current_line_start := buffer.line_starts[cursor.line]
+    current_indent_end := current_line_start
+    for current_indent_end < len(buffer.data) && buffer.data[current_indent_end] == ' ' {
+        current_indent_end += 1
+    }
+    current_indent := current_indent_end - current_line_start
+
+    // Adjust current line's indentation if necessary.
+    if current_indent != total_indent {
+        // Remove existing indentation.
+        if current_indent > 0 {
+            copy(buffer.data[current_line_start:], buffer.data[current_indent_end:])
+            resize(&buffer.data, len(buffer.data) - current_indent)
+            cursor.pos -= current_indent
+        }
+
+        // Insert new indentation.
+        if total_indent > 0 {
+            indent_str := strings.repeat(" ", total_indent, allocator)
+            defer delete(indent_str, allocator)
+            text_bytes := transmute([]u8)indent_str
+            resize(&buffer.data, len(buffer.data) + total_indent)
+            copy(buffer.data[current_line_start + total_indent:], buffer.data[current_line_start:])
+            copy(buffer.data[current_line_start:], text_bytes)
+            cursor.pos += total_indent
+        }
+
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, current_line_start)
+    }
+}
 
 get_char_class :: proc(r: rune, word_type: Word_Type) -> Char_Class {
 	switch word_type {

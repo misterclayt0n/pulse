@@ -288,7 +288,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.END) do buffer_move_cursor(p.current_window, .LINE_END)
 		if press_and_repeat(.TAB) do buffer_insert_tab(p.current_window, allocator)
 
-		if press_and_repeat(.ENTER) do buffer_insert_char(p.current_window, '\n')
+		if press_and_repeat(.ENTER) do buffer_insert_newline(p.current_window, allocator)
 		if press_and_repeat(.BACKSPACE) {
 			if ctrl_pressed || alt_pressed do buffer_delete_word(p.current_window)
 			else do buffer_delete_char(p.current_window)
@@ -492,6 +492,7 @@ insert_newline :: proc(p: ^Pulse, above: bool) {
 		buffer_move_cursor(p.current_window, .LINE_START)
 		buffer_insert_char(p.current_window, '\n')
 		buffer_move_cursor(p.current_window, .UP)
+        buffer_update_indentation(p.current_window)
 		change_mode(p, .INSERT)
 	} else {
 		current_line := p.current_window.cursor.line
@@ -501,6 +502,7 @@ insert_newline :: proc(p: ^Pulse, above: bool) {
 		// Move to true end of current line's content (before any existing newline)
 		p.current_window.cursor.pos = current_line_start + current_line_length
 		buffer_insert_char(p.current_window, '\n')
+        buffer_update_indentation(p.current_window)
 		change_mode(p, .INSERT)
 	}
 }

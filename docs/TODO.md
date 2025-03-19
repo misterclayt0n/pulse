@@ -30,6 +30,7 @@ I only have so far some general and simple ideas, so I'm just laying them out he
     - [x] diw
     - [x] dip/dap
     - [x] di[delimiter]/da[delimiter]
+- [ ] Count + operations + direction (e.g. "2dj") -> Not that necessary to be honest but it's nice
 
 ### Emacs
 Emacs?
