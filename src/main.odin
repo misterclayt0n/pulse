@@ -16,7 +16,6 @@ main :: proc() {
 	// Get filename from cli.
 	filename := ""
 	if len(os.args) > 1 do filename = os.args[1]
-	fmt.println(filename)
 
 	rl.SetConfigFlags({.WINDOW_RESIZABLE})
 	rl.InitWindow(rl.GetScreenWidth(), rl.GetScreenHeight(), "Pulse")

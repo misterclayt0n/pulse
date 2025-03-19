@@ -15,7 +15,7 @@ import rl "vendor:raylib"
 #assert(MIN_FONT_SIZE > 0, "Minimum font size must be positive")
 #assert(MAX_FONT_SIZE > MIN_FONT_SIZE, "Max font size must be greater than minimum")
 
-// Main state of the editor,
+// Main state of the editor.
 Pulse :: struct {
 	windows:        [dynamic]Window,
 	current_window: ^Window,
@@ -23,7 +23,7 @@ Pulse :: struct {
 	status_line:    Status_Line,
 	keymap:         Keymap,
 	should_close:   bool,
-	screen_size:    rl.Vector2,
+	screen_size:    rl.Vector2, // Cached window dimensions.
 	split_type:     Split_Type,
 }
 
@@ -49,7 +49,8 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	assert(len(windows) > 0, "Windows array must not be empty")
 	assert(&windows[0] != nil, "Current window pointer is invalid")
 
-	status_line := status_line_init(font)
+	status_line_font := load_font_with_codepoints(font_path, 18, TEXT_COLOR, allocator) // Default status line font.
+	status_line := status_line_init(status_line_font)
 	keymap := keymap_init(.VIM, allocator) // Default to vim.
 
 	screen_size: rl.Vector2 = {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
@@ -106,7 +107,7 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 		window_draw(p, window, p.font, allocator)
 	}
 
-	// Find and draw all split edges
+	// Find and draw all split edges.
 	edges := make([dynamic]Split_Edge, allocator)
 	defer delete(edges)
 

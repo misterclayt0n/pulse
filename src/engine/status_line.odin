@@ -44,7 +44,7 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 		font              = font,
 		padding           = 10,
 		command_window    = command_window,
-		command_indicator = "",
+		command_indicator = "Command:",
 		message           = "",
 		message_duration  = MESSAGE_DURATION, // Show messages for 3 seconds.
 		message_color     = rl.GOLD,
@@ -69,8 +69,8 @@ status_line_update :: proc(p: ^Pulse) {
 
 status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	// Draw background.
-	line_height := s.font.size + i32(s.font.spacing)
-	status_height := line_height + i32(s.padding) // Total height considering padding.
+	line_height := s.font.size
+	status_height := s.font.size + i32(s.padding) // Total height considering padding.
 
 	bg_rect := rl.Rectangle {
 		x      = 0,

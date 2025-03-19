@@ -69,7 +69,7 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	//
 
 	line_height := f32(font.size) + font.spacing
-	cursor_world_y := 10 + f32(w.cursor.line) * line_height
+	cursor_world_y := 10 + f32(w.cursor.line) * line_height // Absolute Y position of the cursor + 10 hardcoded margin.
 	window_height := w.rect.height
 
 	// Add margin to document height to create empty space at the bottom.

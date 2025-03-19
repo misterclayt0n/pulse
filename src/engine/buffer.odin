@@ -23,7 +23,7 @@ Cursor :: struct {
 	pos:           int, // Position in the array of bytes.
 	sel:           int,
 	line:          int, // Current line number.
-	col:           int, // Current column (character index) in the line.
+	col:           int, // Current column (character, not byte index) in the line.
 	preferred_col: int, // Preferred column maintained across vertical movements.
 	style:         Cursor_Style,
 	color:         rl.Color,
@@ -447,6 +447,8 @@ buffer_delete_range :: proc(window: ^Window, start, end: int) {
 	buffer_update_line_starts(window, start)
 }
 
+// Updates the line_starts array starting from the line affected by an edit at edit_pos.
+// Recalculates line_starts from edit_pos to the end of the buffer.
 buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
 	using window
 
@@ -540,17 +542,6 @@ buffer_rebuild_line_starts :: proc(window: ^Window) {
 			append(&buffer.line_starts, i + 1)
 		}
 	}
-
-	// Update cursor line and column.
-	cursor.line = 0
-	for i := 1; i < len(buffer.line_starts); i += 1 {
-		if cursor.pos >= buffer.line_starts[i] {
-			cursor.line = i
-		} else {
-			break
-		}
-	}
-	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
 }
 
 //
