@@ -35,7 +35,7 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 Emacs?
 
 ### Editing
-- [ ] Multiple cursors (absolute must have, similar to Zed).
+- [ ] Multiple cursors (absolute must have, similar to Zed/Helix).
 - [ ] Macros?
 - [ ] Clipboard interaction.
 - [ ] Undo/Redo.

@@ -181,6 +181,11 @@ buffer_insert_char :: proc(window: ^Window, char: rune) {
 	buffer_update_line_starts(window, offset)
 }
 
+buffer_insert_tab :: proc(window: ^Window, allocator := context.allocator) {
+	indent_str := strings.repeat(" ", window.tab_width, allocator)
+	buffer_insert_text(window, indent_str)
+}
+
 buffer_delete_char :: proc(window: ^Window) {
 	using window
 	assert(len(buffer.data) >= 0, "Delete called on invalid buffer")

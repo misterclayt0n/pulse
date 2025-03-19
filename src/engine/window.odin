@@ -15,6 +15,8 @@ Window :: struct {
 	target_y:    f32,
 	text_offset: f32, // Determines where text rendering starts.
 	mode:        Vim_Mode,
+	use_tabs:    bool,
+	tab_width:   int,
 }
 
 Split_Type :: enum {
@@ -58,6 +60,8 @@ window_init :: proc(
 			blink         = false, // FIX: This shit.
 		},
 		mode = .NORMAL,
+		use_tabs = false, // Default to space
+		tab_width = INDENT_SIZE,
 	}
 
 	return new_window
@@ -614,3 +618,4 @@ window_focus_bottom :: proc(p: ^Pulse) {
 		p.current_window.is_focus = true
 	}
 }
+

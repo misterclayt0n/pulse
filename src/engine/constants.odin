@@ -17,3 +17,4 @@ GAP :: 30.0 // Additional gap between line numbers and text
 HIGHLIGHT_COLOR :: rl.Color{100, 100, 255, 100}
 CURSOR_COLOR :: rl.GRAY
 COMMAND_BUFFER_CURSOR_COLOR :: rl.RED
+INDENT_SIZE :: 4
