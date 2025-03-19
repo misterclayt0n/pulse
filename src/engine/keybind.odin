@@ -179,6 +179,12 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			command_normal = !command_normal
 		}
 
+		// ESC clears the command buffer.
+		if press_and_repeat(.ESCAPE) {
+			p.current_window.cursor.color = CURSOR_COLOR
+			clear(&p.keymap.vim_state.normal_cmd_buffer)
+		}
+
 		//
 		// Command buffer evaluation.
 		//
@@ -296,7 +302,13 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		key := rl.GetCharPressed()
 		for key != 0 {
-			buffer_insert_char(p.current_window, rune(key))
+			r := rune(key)
+			
+			if r == '}' || r == ')' || r == ']' {
+				buffer_insert_closing_delimiter(p.current_window, r, allocator)
+			} else {
+				buffer_insert_char(p.current_window, r)
+			}
 			key = rl.GetCharPressed()
 		}
 		clear(&p.keymap.vim_state.normal_cmd_buffer)
@@ -492,7 +504,7 @@ insert_newline :: proc(p: ^Pulse, above: bool) {
 		buffer_move_cursor(p.current_window, .LINE_START)
 		buffer_insert_char(p.current_window, '\n')
 		buffer_move_cursor(p.current_window, .UP)
-        buffer_update_indentation(p.current_window)
+		buffer_update_indentation(p.current_window)
 		change_mode(p, .INSERT)
 	} else {
 		current_line := p.current_window.cursor.line
@@ -502,7 +514,7 @@ insert_newline :: proc(p: ^Pulse, above: bool) {
 		// Move to true end of current line's content (before any existing newline)
 		p.current_window.cursor.pos = current_line_start + current_line_length
 		buffer_insert_char(p.current_window, '\n')
-        buffer_update_indentation(p.current_window)
+		buffer_update_indentation(p.current_window)
 		change_mode(p, .INSERT)
 	}
 }

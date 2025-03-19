@@ -361,3 +361,33 @@ is_blank_line :: proc(buffer: ^Buffer, line: int) -> bool {
 	return true
 }
 
+get_matching_open_delimiter :: proc(delim: rune) -> rune {
+    assert(delim == '}' || delim == ')' || delim == ']', "Input must be a recognized closing delimiter")
+    switch delim {
+    case '}': return '{'
+    case ')': return '('
+    case ']': return '['
+    }
+
+    return 0 // Not recognized closing delimiter.
+} 
+
+find_matching_open_delimiter :: proc(buffer: ^Buffer, pos: int, open_delim, close_delim: rune) -> int {
+    assert(pos >= 0 && pos < len(buffer.data), "Starting position must be within buffer bounds")
+    counter := 0
+    current_pos := pos
+    for current_pos >= 0 {
+        r, _ := utf8.decode_rune(buffer.data[current_pos:])
+        if r == close_delim {
+            counter += 1
+        } else if r == open_delim {
+            counter -= 1
+            if counter == 0 {
+                return current_pos // Found the matching opening delimiter
+            }
+        }
+        current_pos = prev_rune_start(buffer.data[:], current_pos)
+    }
+    return -1 // No match found
+}
+
