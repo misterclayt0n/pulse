@@ -25,7 +25,7 @@ main :: proc() {
 	defer vmem.arena_destroy(&arena)
 	defer rl.CloseWindow()
 
-	pulse := eg.pulse_init("fonts/GeistMono-VariableFont_wght.ttf", allocator)
+	pulse := eg.pulse_init("fonts/IosevkaNerdFont-Regular.ttf", allocator)
 	assert(&pulse != nil, "Invalid pulse pointer")
 
 	if filename != "" {
