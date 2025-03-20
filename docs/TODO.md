@@ -21,16 +21,17 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 - [ ] Visual block mode (I probably want to develop this the way Zed does it, with multiple cursors).
 - [x] Command buffer (execute motions like "gg", "gd", etc)
 - [x] In/out control: 
-    - [x] viw
-    - [x] vip/vap
-    - [x] vi[delimiter]/va[delimiter]
-    - [x] ciw
-    - [x] cip/cap
-    - [x] ci[delimiter]/ca[delimiter]
-    - [x] diw
-    - [x] dip/dap
-    - [x] di[delimiter]/da[delimiter]
-- [ ] Count + operations + direction (e.g. "2dj") -> Not that necessary to be honest but it's nice
+    - [x] viw.
+    - [x] vip/vap.
+    - [x] vi[delimiter]/va[delimiter].
+    - [x] ciw.
+    - [x] cip/cap.
+    - [x] ci[delimiter]/ca[delimiter].
+    - [x] diw.
+    - [x] dip/dap.
+    - [x] di[delimiter]/da[delimiter].
+- [ ] Count + operations + direction (e.g. "2dj") -> Not that necessary to be honest but it's nice.
+- [ ] Join lines.
 
 ### Emacs
 Emacs?
@@ -60,10 +61,10 @@ Also not so sure about this, but generally speaking:
 - [ ] Buffer management system, also probably copying this from emacs.
 - [ ] Some direct copy of oil.nvim or dired from emacs. This thing is just too cool (will act as my file manager).
 - [ ] Indentation control.
-    - [x] Spaces
-    - [ ] Tabs
+    - [x] Spaces.
+    - [ ] Tabs.
     - [ ] Show indentation spaces as dots (similar to how emacs does it).
-    - [ ] Show tabs as a line? something else? 
+    - [ ] Show tabs as a line? something else?.
 - [ ] Auto pairs?
 - [ ] Mouse control.
 - [ ] Not exactly UI, but hot reload?

@@ -182,8 +182,11 @@ buffer_insert_char :: proc(window: ^Window, char: rune) {
 }
 
 buffer_insert_tab :: proc(window: ^Window, allocator := context.allocator) {
-	indent_str := strings.repeat(" ", window.tab_width, allocator)
-	buffer_insert_text(window, indent_str)
+	if window.use_tabs do buffer_insert_char(window, '\t') 
+	else {
+		indent_str := strings.repeat(" ", window.tab_width, allocator)
+		buffer_insert_text(window, indent_str)
+	}
 }
 
 buffer_insert_newline :: proc(window: ^Window, allocator := context.allocator) {
@@ -249,24 +252,62 @@ buffer_insert_closing_delimiter :: proc(window: ^Window, delimiter: rune, alloca
 }
 
 buffer_delete_char :: proc(window: ^Window) {
-	using window
-	assert(len(buffer.data) >= 0, "Delete called on invalid buffer")
-	old_len := len(buffer.data)
+    using window
+    assert(len(buffer.data) >= 0, "Delete called on invalid buffer")
+    assert(cursor.line >= 0 && cursor.line < len(buffer.line_starts), "Cursor line out of bounds")
+    old_len := len(buffer.data)
 
-	if cursor.pos <= 0 do return // NOTE: Stop deleting after the position is 0.
+    if cursor.pos <= 0 do return // Stop deleting if at the buffer's start.
 
-	start_index := prev_rune_start(buffer.data[:], cursor.pos)
-	n_bytes := cursor.pos - start_index // Number of bytes in the rune.
+    line_start := buffer.line_starts[cursor.line]
+    bytes_to_delete := 0
+    start_index := cursor.pos
 
-	// Remove the rune's bytes.
-	copy(buffer.data[start_index:], buffer.data[cursor.pos:])
-	resize(&buffer.data, len(buffer.data) - n_bytes)
+    if cursor.pos == line_start && cursor.line > 0 {
+        // Cursor is at the start of a line (not the first line).
+        // Delete the previous newline to join with the previous line.
+        start_index = cursor.pos - 1
+        assert(buffer.data[start_index] == '\n', "Expected newline before line start")
+        bytes_to_delete = 1
+    }
 
-	cursor.pos = start_index
-	buffer_mark_dirty(buffer)
-	assert(len(buffer.data) == old_len - n_bytes, "Deletion size mismatched")
+    if cursor.pos > line_start {
+        // Cursor is within the line.
+        is_indentation := true
+        for pos := line_start; pos < cursor.pos; pos += 1 {
+            if buffer.data[pos] != ' ' && buffer.data[pos] != '\t' {
+                is_indentation = false
+                break
+            }
+        }
 
-	buffer_update_line_starts(window, start_index)
+        if is_indentation {
+            // Within indentation: delete up to tab_width spaces or one character.
+            if buffer.data[cursor.pos - 1] == ' ' {
+                spaces := 0
+                pos := cursor.pos - 1
+                for pos >= line_start && buffer.data[pos] == ' ' && spaces < window.tab_width {
+                    spaces += 1
+                    pos -= 1
+                }
+                bytes_to_delete = spaces
+                start_index = cursor.pos - spaces
+            }
+        } else {
+            // Not in indentation: delete one character.
+            start_index = prev_rune_start(buffer.data[:], cursor.pos)
+            bytes_to_delete = cursor.pos - start_index
+        }
+    }
+
+    if bytes_to_delete > 0 {
+        copy(buffer.data[start_index:], buffer.data[cursor.pos:])
+        resize(&buffer.data, len(buffer.data) - bytes_to_delete)
+        assert(len(buffer.data) == old_len - bytes_to_delete, "Buffer length mismatch after deletion")
+        cursor.pos = start_index
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, start_index)
+    }
 }
 
 buffer_delete_forward_char :: proc(window: ^Window) {

@@ -15,7 +15,7 @@ Window :: struct {
 	target_y:    f32,
 	text_offset: f32, // Determines where text rendering starts.
 	mode:        Vim_Mode,
-	use_tabs:    bool,
+	use_tabs:    bool, // This is like a big todo, and I can see myself only using spaces.
 	tab_width:   int,
 }
 
