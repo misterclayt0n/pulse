@@ -60,11 +60,14 @@ Also not so sure about this, but generally speaking:
 - [ ] Buffer management system, also probably copying this from emacs.
 - [ ] Some direct copy of oil.nvim or dired from emacs. This thing is just too cool (will act as my file manager).
 - [ ] Indentation control.
+    - [x] Spaces
+    - [ ] Tabs
+    - [ ] Show indentation spaces as dots (similar to how emacs does it).
+    - [ ] Show tabs as a line? something else? 
 - [ ] Auto pairs?
 - [ ] Mouse control.
 - [ ] Not exactly UI, but hot reload?
 - [ ] Zooming fonts.
-- [ ] Show empty spaces as dots (similar to how emacs does it).
 - [x] Line numbers.
 - [x] Some cool lerp scrolling effect (something like the RAD debugger, 4coder, file pilot).
 
