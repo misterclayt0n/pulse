@@ -29,6 +29,7 @@ Vim_Mode :: enum {
 	NORMAL,
 	INSERT,
 	VISUAL,
+	VISUAL_LINE,
 	COMMAND,
 	COMMAND_NORMAL,
 }
@@ -109,8 +110,13 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			}
 
 			if press_and_repeat(.V) {
-				p.current_window.cursor.sel = p.current_window.cursor.pos
-				change_mode(p, .VISUAL)
+				if shift_pressed {
+					p.current_window.cursor.sel = p.current_window.cursor.pos
+					change_mode(p, .VISUAL_LINE)
+				} else {
+					p.current_window.cursor.sel = p.current_window.cursor.pos
+					change_mode(p, .VISUAL)
+				}
 			}
 
 			if press_and_repeat(.ZERO) do buffer_move_cursor(p.current_window, .LINE_START)
@@ -221,6 +227,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.ESCAPE) {
 			p.current_window.mode = .NORMAL
 			p.current_window.cursor.sel = 0 // Reset selection.
+	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
 		}
 
 		// Only execute "normal" commands if command buffer is empty.
@@ -241,14 +248,18 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 
 		// Selection operations.
-		if press_and_repeat(.D) {
+		if press_and_repeat(.D) || press_and_repeat(.X) {
 			buffer_delete_selection(p.current_window)
 			change_mode(p, .NORMAL)
+			clear(&p.keymap.vim_state.normal_cmd_buffer)
+	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
 		}
 
 		if press_and_repeat(.C) {
 			buffer_delete_selection(p.current_window)
 			change_mode(p, .INSERT)
+			clear(&p.keymap.vim_state.normal_cmd_buffer)
+	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
 		}
 
 		//
@@ -277,6 +288,57 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 				clear(&p.keymap.vim_state.normal_cmd_buffer)
 			}
 		}
+		
+	case .VISUAL_LINE:
+		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+
+		// Exit to Normal Mode.
+		if press_and_repeat(.ESCAPE) {
+			p.current_window.mode = .NORMAL
+			p.current_window.cursor.sel = 0 // Reset selection.
+	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
+		}
+
+		// Movement here is similar to VISUAL but line-wise.
+		if press_and_repeat(.UP) || press_and_repeat(.K) {
+			buffer_move_cursor(p.current_window, .UP)
+			buffer_move_cursor(p.current_window, .LINE_START) // Snap to line start.
+		}
+		if press_and_repeat(.DOWN) || press_and_repeat(.J) {
+			buffer_move_cursor(p.current_window, .DOWN)
+			buffer_move_cursor(p.current_window, .LINE_END) // Snap to line end.
+		}
+		if press_and_repeat(.HOME) || press_and_repeat(.ZERO) {
+			buffer_move_cursor(p.current_window, .LINE_START)
+		}
+		if press_and_repeat(.END) || (press_and_repeat(.FOUR) && shift_pressed) {
+			buffer_move_cursor(p.current_window, .LINE_END)
+		}
+		if press_and_repeat(.B) {
+			buffer_move_cursor(p.current_window, .WORD_LEFT)
+		}
+		if press_and_repeat(.W) {
+			buffer_move_cursor(p.current_window, .WORD_RIGHT)
+		}
+		if press_and_repeat(.E) {
+			buffer_move_cursor(p.current_window, .WORD_END)
+		}
+		if press_and_repeat(.MINUS) && shift_pressed {
+			buffer_move_cursor(p.current_window, .FIRST_NON_BLANK)
+		}
+		if press_and_repeat(.G) && shift_pressed {
+			buffer_move_cursor(p.current_window, .FILE_END)
+		}
+
+		// Operations on selected lines.
+		if press_and_repeat(.D) {
+			buffer_delete_visual_line_selection(p.current_window) 
+			change_mode(p, .NORMAL)
+		}
+		if press_and_repeat(.C) {
+			buffer_delete_visual_line_selection(p.current_window)
+			change_mode(p, .INSERT)
+		}
 
 	case .INSERT:
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
@@ -303,7 +365,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		key := rl.GetCharPressed()
 		for key != 0 {
 			r := rune(key)
-			
+
 			if r == '}' || r == ')' || r == ']' {
 				buffer_insert_closing_delimiter(p.current_window, r, allocator)
 			} else {
@@ -438,7 +500,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			buffer_move_cursor(p.current_window, .LEFT)
 		}
 
-		if mode == .COMMAND || mode == .VISUAL {
+		if mode == .COMMAND || mode == .VISUAL || mode == .VISUAL_LINE {
 			mode = .NORMAL
 		}
 	case .INSERT:
@@ -464,6 +526,18 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		mode = .VISUAL
 		// Only set sel = pos if sel hasn't been set (e.g. entering via 'v')
 		if cursor.sel == 0 do cursor.sel = cursor.pos
+	case .VISUAL_LINE:
+		current_line := cursor.line
+		line_start := buffer.line_starts[current_line]
+		line_end := len(buffer.data)
+		if current_line < len(buffer.line_starts) - 1 {
+			line_end = buffer.line_starts[current_line + 1] - 1 // Exclude the newline.
+		}
+
+		cursor.sel = line_start
+		cursor.pos = line_end
+
+		mode = .VISUAL_LINE
 	}
 }
 

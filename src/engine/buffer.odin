@@ -540,6 +540,29 @@ buffer_delete_selection :: proc(window: ^Window) {
 	assert(cursor.sel == cursor.pos, "Selection not reset")
 }
 
+buffer_delete_visual_line_selection :: proc(window: ^Window) {
+	using window
+	if cursor.sel == cursor.pos do return // No selection, nothing to delete.
+    start_pos := min(cursor.sel, cursor.pos)
+    end_pos := max(cursor.sel, cursor.pos)
+    start_line := get_line_from_pos(buffer, start_pos)
+    end_line := get_line_from_pos(buffer, end_pos)
+
+    // Adjust to full line boundaries.
+    delete_start := buffer.line_starts[start_line]
+    delete_end := end_line < len(buffer.line_starts) - 1 ? buffer.line_starts[end_line + 1] : len(buffer.data)
+
+    if delete_end > delete_start {
+        copy(buffer.data[delete_start:], buffer.data[delete_end:])
+        resize(&buffer.data, len(buffer.data) - (delete_end - delete_start))
+        cursor.pos = delete_start
+        cursor.sel = cursor.pos
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, delete_start)
+        buffer_clamp_cursor_to_valid_range(window)
+    }
+}
+
 buffer_delete_range :: proc(window: ^Window, start, end: int) {
 	assert(
 		start >= 0 && start <= end && end <= len(window.buffer.data),
@@ -983,116 +1006,140 @@ buffer_draw_cursor :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 }
 
 buffer_draw_visible_lines :: proc(
-	p: ^Pulse,
-	window: ^Window,
-	font: Font,
-	ctx: Draw_Context,
-	allocator := context.allocator,
+    p: ^Pulse,
+    window: ^Window,
+    font: Font,
+    ctx: Draw_Context,
+    allocator := context.allocator,
 ) {
-	using window
-	// Assert buffer integrity.
-	assert(buffer.data != nil, "Buffer data must not be nil")
-	assert(len(buffer.line_starts) > 0, "Buffer must have at least one line start")
+    using window
+    // Assert buffer integrity.
+    assert(buffer.data != nil, "Buffer data must not be nil")
+    assert(len(buffer.line_starts) > 0, "Buffer must have at least one line start")
 
-	// Assert drawing context.
-	assert(ctx.first_line >= 0, "First line must be non-negative")
-	assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
-	assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
+    // Assert drawing context.
+    assert(ctx.first_line >= 0, "First line must be non-negative")
+    assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
+    assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
 
-	selection_active := window.mode == .VISUAL && cursor.sel != cursor.pos
-	max_val := max(cursor.sel, cursor.pos)
-	sel_start := min(cursor.sel, cursor.pos) if selection_active else 0
-	sel_end := max_val + (max_val < len(buffer.data) ? 1 : 0) // Only add 1 if max is within buffer.
-	sel_end = min(sel_end, len(buffer.data))
+    // Determine selection mode and activity
+    is_visual := mode == .VISUAL && cursor.sel != cursor.pos
+    is_visual_line := mode == .VISUAL_LINE && cursor.sel != cursor.pos
+    selection_active := is_visual || is_visual_line
 
-	// Validate selection indices when active.
-	if selection_active {
-		assert(sel_start >= 0 && sel_start <= len(buffer.data), "Selection start out of bounds")
-		assert(sel_end <= len(buffer.data), "Selection end out of bounds")
-		assert(sel_start <= sel_end, "Selection start must be <= end")
-	}
+    // Selection range for character-wise mode (.VISUAL)
+    sel_start, sel_end: int
+    if selection_active {
+        sel_start = min(cursor.sel, cursor.pos)
+        sel_end = max(cursor.sel, cursor.pos)
+        if is_visual {
+            sel_end += (sel_end < len(buffer.data) ? 1 : 0) // Include last character for .VISUAL
+        }
+        sel_end = min(sel_end, len(buffer.data))
+    }
 
-	// Handle non-last lines.
-	for line in ctx.first_line ..= ctx.last_line {
-		line_start := buffer.line_starts[line]
-		line_end := len(buffer.data)
+    // Line range for visual line mode (.VISUAL_LINE)
+    start_line, end_line: int
+    if is_visual_line && selection_active {
+        start_line = get_line_from_pos(buffer, sel_start)
+        end_line = get_line_from_pos(buffer, sel_end)
+    }
 
-		if line < len(buffer.line_starts) - 1 {
-			next_line_start := buffer.line_starts[line + 1]
-			if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
-				line_end = next_line_start - 1 // Exclude newline from text drawing.
-			} else {
-				line_end = next_line_start
-			}
-		}
+    // Validate selection indices when active
+    if selection_active {
+        assert(sel_start >= 0 && sel_start <= len(buffer.data), "Selection start out of bounds")
+        assert(sel_end <= len(buffer.data), "Selection end out of bounds")
+        assert(sel_start <= sel_end, "Selection start must be <= end")
+    }
 
-		// Validate line bounds.
-		assert(line_start >= 0 && line_start <= len(buffer.data), "Line start out of bounds")
-		assert(line_end >= line_start && line_end <= len(buffer.data), "Line end out of bounds")
+    // Iterate over visible lines
+    for line in ctx.first_line ..= ctx.last_line {
+        line_start := buffer.line_starts[line]
+        line_end := len(buffer.data)
 
-		// Calculate line width for text positioning.
-		line_text_for_measure := string(buffer.data[line_start:line_end])
-		line_str_for_measure := strings.clone_to_cstring(line_text_for_measure, allocator)
-		defer delete(line_str_for_measure, allocator)
-		line_width :=
-			rl.MeasureTextEx(font.ray_font, line_str_for_measure, f32(font.size), font.spacing).x
+        if line < len(buffer.line_starts) - 1 {
+            next_line_start := buffer.line_starts[line + 1]
+            if next_line_start > 0 && buffer.data[next_line_start - 1] == '\n' {
+                line_end = next_line_start - 1 // Exclude newline from text drawing
+            } else {
+                line_end = next_line_start
+            }
+        }
 
-		// Highlight selection if it overlaps this line.
-		if selection_active && sel_start < line_end && sel_end > line_start {
-			start_pos := max(sel_start, line_start)
-			end_pos := min(sel_end, line_end)
+        // Validate line bounds
+        assert(line_start >= 0 && line_start <= len(buffer.data), "Line start out of bounds")
+        assert(line_end >= line_start && line_end <= len(buffer.data), "Line end out of bounds")
 
-			x_start := ctx.position.x
-			y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+        // Calculate line width for text positioning
+        line_text := string(buffer.data[line_start:line_end])
+        line_str := strings.clone_to_cstring(line_text, allocator)
+        defer delete(line_str, allocator)
+        line_width := rl.MeasureTextEx(font.ray_font, line_str, f32(font.size), font.spacing).x
 
-			// Measure text before selection.
-			text_before := buffer.data[line_start:start_pos]
-			before_str := strings.clone_to_cstring(string(text_before), allocator)
-			defer delete(before_str, allocator)
-			x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
+        // Highlight selection if applicable
+        if selection_active {
+            x_start := ctx.position.x
+            y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
 
-			// Measure selected text width.
-			text_selected := buffer.data[start_pos:end_pos]
-			selected_str := strings.clone_to_cstring(string(text_selected), allocator)
-			defer delete(selected_str, allocator)
-			sel_width :=
-				rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
-			highlighted_line := f32(font.size) + (font.spacing * 0.9)
+            if is_visual_line && line >= start_line && line <= end_line {
+                // Highlight entire line for .VISUAL_LINE
+                sel_width := line_width
+                if line_end == line_start { // Empty line
+                    sel_width = rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x
+                }
+                rl.DrawRectangleV(
+                    {x_start, y_pos},
+                    {sel_width, f32(font.size)},
+                    HIGHLIGHT_COLOR,
+                )
+            } else if is_visual && sel_start < line_end && sel_end > line_start {
+                // Highlight character-wise selection for .VISUAL
+                start_pos := max(sel_start, line_start)
+                end_pos := min(sel_end, line_end)
 
-			// Draw highlight for selected text.
-			rl.DrawRectangleV(
-				{x_start + x_offset, y_pos},
-				{sel_width, f32(font.size)}, // Use font.size for consistent height.
-				HIGHLIGHT_COLOR,
-			)
+                // Measure text before selection
+                text_before := buffer.data[line_start:start_pos]
+                before_str := strings.clone_to_cstring(string(text_before), allocator)
+                defer delete(before_str, allocator)
+                x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
 
-			// Extend highlight to end of line if selection includes newline.
-			is_empty_line := line_end - line_start == 0 // Check if line has no visible characters.
-			if line < len(buffer.line_starts) - 1 && sel_end > line_end && is_empty_line {
-				space_width := rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x
-				rl.DrawRectangleV(
-					{x_start + line_width, y_pos},
-					{space_width, highlighted_line}, // Match text height.
-					HIGHLIGHT_COLOR,
-				)
-			}
-		}
+                // Measure selected text width
+                text_selected := buffer.data[start_pos:end_pos]
+                selected_str := strings.clone_to_cstring(string(text_selected), allocator)
+                defer delete(selected_str, allocator)
+                sel_width := rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
 
-		// Draw the line text.
-		y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
-		line_text := buffer.data[line_start:line_end]
-		line_str := strings.clone_to_cstring(string(line_text), allocator)
-		defer delete(line_str, allocator)
+                // Draw highlight for selected text
+                rl.DrawRectangleV(
+                    {x_start + x_offset, y_pos},
+                    {sel_width, f32(font.size)},
+                    HIGHLIGHT_COLOR,
+                )
 
-		rl.DrawTextEx(
-			font.ray_font,
-			line_str,
-			rl.Vector2{ctx.position.x, y_pos},
-			f32(font.size),
-			font.spacing,
-			font.color,
-		)
-	}
+                // Extend highlight for empty lines if selection includes newline
+                is_empty_line := line_end - line_start == 0
+                if line < len(buffer.line_starts) - 1 && sel_end > line_end && is_empty_line {
+                    space_width := rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x
+                    rl.DrawRectangleV(
+                        {x_start + line_width, y_pos},
+                        {space_width, f32(font.size)},
+                        HIGHLIGHT_COLOR,
+                    )
+                }
+            }
+        }
+
+        // Draw the line text
+        y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+        rl.DrawTextEx(
+            font.ray_font,
+            line_str,
+            rl.Vector2{ctx.position.x, y_pos},
+            f32(font.size),
+            font.spacing,
+            font.color,
+        )
+    }
 }
 
 //
