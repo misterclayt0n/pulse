@@ -80,6 +80,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.J) {
 				if ctrl_pressed do window_focus_bottom(p)
+				else if shift_pressed do buffer_join_lines(p.current_window)
 				else do buffer_move_cursor(p.current_window, .DOWN)
 			}
 

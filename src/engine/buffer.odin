@@ -580,6 +580,57 @@ buffer_delete_range :: proc(window: ^Window, start, end: int) {
 	buffer_update_line_starts(window, start)
 }
 
+buffer_join_lines :: proc(window: ^Window) {
+	using window
+
+	if cursor.line >= len(buffer.line_starts) - 1 do return // No next line exists, do nothing
+
+	current_line := cursor.line
+	next_line := current_line + 1
+
+	current_line_end := buffer.line_starts[next_line] - 1 
+	if current_line_end >= len(buffer.data) || buffer.data[current_line_end] != '\n' do return // No newline to remove
+
+	// Remove the newline by shifting data
+	next_line_start := buffer.line_starts[next_line]
+	bytes_to_remove := next_line_start - current_line_end
+	copy(buffer.data[current_line_end:], buffer.data[next_line_start:])
+	resize(&buffer.data, len(buffer.data) - bytes_to_remove)
+
+	join_pos := current_line_end
+    content_start := join_pos
+	for content_start < len(buffer.data) && is_whitespace_byte(buffer.data[content_start]) && buffer.data[content_start] != '\n' {
+		content_start += 1
+	}
+
+	// Remove leading whitespace if any exists.
+	if content_start > join_pos {
+        remove_count := content_start - join_pos
+        copy(buffer.data[join_pos:], buffer.data[content_start:])
+        resize(&buffer.data, len(buffer.data) - remove_count)
+	}
+
+    // Insert a space at the join point.
+    resize(&buffer.data, len(buffer.data) + 1)
+    copy(buffer.data[join_pos + 1:], buffer.data[join_pos:])
+    buffer.data[join_pos] = ' '
+
+    // Update the line_starts array to reflect the new structure.
+    buffer_update_line_starts(window, join_pos)
+    buffer_mark_dirty(buffer)
+}
+
+buffer_rebuild_line_starts :: proc(window: ^Window) {
+	using window
+	clear(&buffer.line_starts)
+	append(&buffer.line_starts, 0) // Start of first line.
+	for i := 0; i < len(buffer.data); i += 1 {
+		if buffer.data[i] == '\n' {
+			append(&buffer.line_starts, i + 1)
+		}
+	}
+}
+
 // Updates the line_starts array starting from the line affected by an edit at edit_pos.
 // Recalculates line_starts from edit_pos to the end of the buffer.
 buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
@@ -664,17 +715,6 @@ buffer_update_line_starts :: proc(window: ^Window, edit_pos: int) {
 		}
 	}
 	cursor.col = cursor.pos - buffer.line_starts[cursor.line]
-}
-
-buffer_rebuild_line_starts :: proc(window: ^Window) {
-	using window
-	clear(&buffer.line_starts)
-	append(&buffer.line_starts, 0) // Start of first line.
-	for i := 0; i < len(buffer.data); i += 1 {
-		if buffer.data[i] == '\n' {
-			append(&buffer.line_starts, i + 1)
-		}
-	}
 }
 
 //
