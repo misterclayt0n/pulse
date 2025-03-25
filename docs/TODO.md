@@ -31,7 +31,7 @@ I only have so far some general and simple ideas, so I'm just laying them out he
     - [x] dip/dap.
     - [x] di[delimiter]/da[delimiter].
 - [ ] Count + operations + direction (e.g. "2dj") -> Not that necessary to be honest but it's nice.
-- [ ] Join lines.
+- [x] Join lines.
 
 ### Emacs
 Emacs?
@@ -43,7 +43,6 @@ Emacs?
 - [ ] Undo/Redo.
 - [ ] Search.
 - [ ] Substitute (probably like Emacs as well).
-- [ ] Tab handling - Will probably just treat tabs as spaces or something? Is this the easiest way to deal with them?
 - [ ] Drag and drop a file into the editor to open it.
 
 ### Windows
