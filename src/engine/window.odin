@@ -6,17 +6,18 @@ import "core:unicode/utf8"
 import rl "vendor:raylib"
 
 Window :: struct {
-	buffer:      ^Buffer,
-	cursor:      Cursor,
-	rect:        rl.Rectangle,
-	scroll:      rl.Vector2,
-	is_focus:    bool,
-	target_x:    f32,
-	target_y:    f32,
-	text_offset: f32, // Determines where text rendering starts.
-	mode:        Vim_Mode,
-	use_tabs:    bool, // This is like a big todo, and I can see myself only using spaces.
-	tab_width:   int,
+	buffer:             ^Buffer,
+	cursor:             Cursor,
+	additional_cursors: [dynamic]Cursor,
+	rect:               rl.Rectangle,
+	scroll:             rl.Vector2,
+	is_focus:           bool,
+	target_x:           f32,
+	target_y:           f32,
+	text_offset:        f32, // Determines where text rendering starts.
+	mode:               Vim_Mode,
+	use_tabs:           bool, // This is like a big todo, and I can see myself only using spaces.
+	tab_width:          int,
 }
 
 Split_Type :: enum {
@@ -30,9 +31,9 @@ Split_Edge :: struct {
 	start, end: rl.Vector2,
 }
 
-// 
+//
 // Struct management
-// 
+//
 
 window_init :: proc(
 	buffer: ^Buffer,
@@ -59,6 +60,7 @@ window_init :: proc(
 			color         = CURSOR_COLOR,
 			blink         = false, // FIX: This shit.
 		},
+		additional_cursors = make([dynamic]Cursor, 0, 1, allocator),
 		mode = .NORMAL,
 		use_tabs = false, // Default to space
 		tab_width = INDENT_SIZE,
@@ -619,3 +621,36 @@ window_focus_bottom :: proc(p: ^Pulse) {
 	}
 }
 
+//
+// Multiple cursors
+//
+
+window_add_cursor :: proc(window: ^Window, line, col: int) {
+	using window
+	assert(line <= 0 || line >= len(buffer.line_starts), "Invalid line to add a cursor")
+	start := buffer.line_starts[line]
+	end := len(buffer.data)
+	if line < len(buffer.line_starts) - 1 {
+		end = buffer.line_starts[line + 1] - 1 // Exclude newline.
+	}
+	pos := start + col
+	if pos > end do pos = end // Clamp the fucker.
+	new_cursor := Cursor {
+        pos           = pos,
+        sel           = pos, // No selection initially.
+        line          = line,
+        col           = col,
+        preferred_col = col,
+        style         = .BLOCK,
+        color         = CURSOR_COLOR, // Could use a different color to distinguish.
+        blink         = false,
+	}
+
+	append(&additional_cursors, new_cursor)
+}
+
+window_update_cursors :: proc(window: ^Window, movement: Cursor_Movement) {
+    for &extra_cursor in window.additional_cursors {
+        cursor_move(&extra_cursor, window.buffer, movement)
+    }
+}

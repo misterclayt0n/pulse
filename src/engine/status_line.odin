@@ -122,7 +122,7 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 			line_height   = int(line_height),
 		}
 
-		buffer_draw_cursor(s.command_window, s.font, ctx)
+		cursor_draw(s.command_window, s.font, ctx)
 	}
 
 	msg_width :=

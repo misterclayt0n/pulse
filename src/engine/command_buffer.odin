@@ -2,12 +2,13 @@ package engine
 
 import "core:fmt"
 import "core:strings"
+import "core:math/big"
 import rl "vendor:raylib"
 import "core:unicode/utf8"
 
 // NOTE: Leader key is hard coded as space.
 Known_Commands :: []string {
-	"gg", 
+	"gg",
 	"gd", // TODO: Go to definition
 	"dd",
 	"cc",
@@ -33,35 +34,35 @@ Known_Commands :: []string {
 	"di\"",
 	"di'",
 	"dip", // Delete inner paragraph
-    "a(", 
-    "a[", 
-    "a{", 
-    "a\"", 
-    "a'", 
-    "da(", 
-    "da[", 
-    "da{", 
+    "a(",
+    "a[",
+    "a{",
+    "a\"",
+    "a'",
+    "da(",
+    "da[",
+    "da{",
     "da\"",
-    "da'", 
-    "ca(", 
-    "ca[", 
-    "ca{", 
+    "da'",
+    "ca(",
+    "ca[",
+    "ca{",
     "ca\"",
-    "ca'", 
-    "ap", 
-    "dap", 
-    "cap", 
+    "ca'",
+    "ap",
+    "dap",
+    "cap",
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
 	if window.mode == .NORMAL && (cmd == "d" || cmd == "g" || cmd == "c") {
 		window.cursor.color = COMMAND_BUFFER_CURSOR_COLOR
 	}
-	
+
 	for known in Known_Commands {
 		if cmd == known {
 			return true
-		} 
+		}
 	}
 
 	return false
@@ -78,7 +79,7 @@ is_prefix_of_command :: proc(cmd: string) -> bool {
 execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 	switch cmd {
 	case "gg":
-		buffer_move_cursor(p.current_window, .FILE_BEGINNING)
+		cursor_move(&p.current_window.cursor, p.current_window.buffer, .FILE_BEGINNING)
 	case "dd":
 		buffer_delete_line(p.current_window)
 	case "cc":
@@ -88,7 +89,7 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 		status_line_log(&p.status_line, "Saving file from leader w")
 
 	// Inner commands.
-	
+
 	case "iw":
 		select_inner_word(p)
 	case "ciw":
@@ -131,7 +132,7 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
     	delete_inner_paragraph(p)
 
 	// Around commands.
-    	
+
     case "a(":
         select_around_delimiter(p, '(')
     case "a[":
@@ -168,7 +169,7 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         delete_inner_paragraph(p)
     case "cap":
         change_inner_paragraph(p)
-    
+
 	}
 }
 
@@ -199,12 +200,15 @@ execute_command :: proc(p: ^Pulse) {
 	case "close":
 		status_line_log(&p.status_line, "Split closed")
 		window_close_current(p)
+	case "cursor":
+		status_line_log(&p.status_line, "Cursor added")
+		window_add_cursor(p.current_window, 0, 0) // Mocked for now.
 	case:
 		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}
 }
 
-// 
+//
 // Inner motions
 //
 
@@ -264,10 +268,10 @@ select_inner_paragraph :: proc(p: ^Pulse) {
 delete_inner_paragraph :: proc(p: ^Pulse) {
 	buffer := p.current_window.buffer
 	current_line := p.current_window.cursor.line
-	
+
 	start_line := find_paragraph_start(buffer, current_line)
 	end_line := find_paragraph_end(buffer, current_line)
-	
+
 	if start_line <= end_line {
 		start_pos := buffer.line_starts[start_line]
 		end_pos := len(buffer.data)
@@ -284,10 +288,10 @@ delete_inner_paragraph :: proc(p: ^Pulse) {
 change_inner_paragraph :: proc(p: ^Pulse) {
 	buffer := p.current_window.buffer
 	current_line := p.current_window.cursor.line
-	
+
 	start_line := find_paragraph_start(buffer, current_line)
 	end_line := find_paragraph_end(buffer, current_line)
-	
+
 	if start_line <= end_line {
 		start_pos := buffer.line_starts[start_line]
 		end_pos := len(buffer.data)
@@ -353,9 +357,9 @@ delete_inner_delimiter :: proc(p: ^Pulse, delim: rune) {
 	}
 }
 
-// 
+//
 // Around motions
-// 
+//
 
 @(private)
 select_around_delimiter :: proc(p: ^Pulse, delim: rune) {
@@ -373,7 +377,7 @@ select_around_delimiter :: proc(p: ^Pulse, delim: rune) {
     		p.current_window.cursor.pos = last_rune_start
     	} else {
     		p.current_window.cursor.pos = start
-    	} 
+    	}
 
     	buffer_update_cursor_line_col(p.current_window)
     }
@@ -409,4 +413,3 @@ change_around_delimiter :: proc(p: ^Pulse, delim: rune) {
         change_mode(p, .INSERT)
     }
 }
-
