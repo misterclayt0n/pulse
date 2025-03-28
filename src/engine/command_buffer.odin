@@ -202,7 +202,7 @@ execute_command :: proc(p: ^Pulse) {
 		window_close_current(p)
 	case "cursor":
 		status_line_log(&p.status_line, "Cursor added")
-		window_add_cursor(p.current_window, 0, 0) // Mocked for now.
+		add_cursor(p.current_window, 0, 0) // Mocked for now.
 	case:
 		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}

@@ -1,6 +1,7 @@
 package engine
 
 import rl "vendor:raylib"
+import "core:slice"
 
 Cursor :: struct {
 	pos:           int, // Position in the array of bytes.
@@ -372,3 +373,96 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
         cursor.preferred_col = cursor.col
     }
 }
+
+add_cursor :: proc(window: ^Window, line, col: int) {
+	using window
+	assert(line <= 0 || line >= len(buffer.line_starts), "Invalid line to add a cursor")
+	start := buffer.line_starts[line]
+	end := len(buffer.data)
+	if line < len(buffer.line_starts) - 1 {
+		end = buffer.line_starts[line + 1] - 1 // Exclude newline.
+	}
+	pos := start + col
+	if pos > end do pos = end // Clamp the fucker.
+	new_cursor := Cursor {
+        pos           = pos,
+        sel           = pos, // No selection initially.
+        line          = line,
+        col           = col,
+        preferred_col = col,
+        style         = .BLOCK,
+        color         = CURSOR_COLOR, // Could use a different color to distinguish.
+        blink         = false,
+	}
+
+	append(&additional_cursors, new_cursor)
+}
+
+// Move all cursors.
+move_cursors :: proc(window: ^Window, movement: Cursor_Movement) {
+	cursor_move(&window.cursor, window.buffer, movement)
+    for &extra_cursor in window.additional_cursors {
+        cursor_move(&extra_cursor, window.buffer, movement)
+    }
+}
+
+get_sorted_cursors :: proc(window: ^Window, allocator := context.allocator) -> []^Cursor {
+	all_cursors := get_all_cursors(window, allocator)
+	defer delete(all_cursors, allocator)
+
+	cursors := make([]^Cursor, len(all_cursors), allocator)
+	for i := 0; i < len(cursors); i+= 1 {
+		cursors[i] = &all_cursors[i]
+	}
+
+	slice.sort_by(cursors, proc(a, b: ^Cursor) -> bool { return a.pos > b.pos } )
+	return cursors
+}
+
+adjust_cursors :: proc(cursors: []^Cursor, primary_cursor: ^Cursor, offset: int, add: bool, n_bytes: int) {
+	for other_cursor in cursors {
+		if other_cursor != primary_cursor && other_cursor.pos > offset {
+			if add do other_cursor.pos += n_bytes
+			else do other_cursor.pos -= n_bytes
+		}
+	}
+}
+
+update_cursors_from_temp_slice :: proc(window: ^Window, cursors: []^Cursor) {
+    window.cursor = cursors[0]^
+    for i := 0; i < len(window.additional_cursors); i += 1 {
+        window.additional_cursors[i] = cursors[i + 1]^
+    }
+}
+
+// Updates the line and column for all cursors based on their pos and the buffer's line_starts.
+update_cursor_lines_and_cols :: proc(buffer: ^Buffer, cursors: []^Cursor) {
+    for cursor_ptr in cursors {
+        assert(cursor_ptr.pos >= 0 && cursor_ptr.pos <= len(buffer.data), "Cursor position out of bounds")
+
+        cursor_ptr.line = 0
+        for j in 1 ..< len(buffer.line_starts) {
+            if cursor_ptr.pos >= buffer.line_starts[j] do cursor_ptr.line = j
+	        else do break
+        }
+
+        assert(cursor_ptr.line >= 0 && cursor_ptr.line < len(buffer.line_starts), "Cursor line out of range")
+        cursor_ptr.col = cursor_ptr.pos - buffer.line_starts[cursor_ptr.line]
+        assert(cursor_ptr.col >= 0, "Cursor column must be non-negative")
+    }
+}
+
+//
+// Helpers
+//
+
+get_all_cursors :: proc(window: ^Window, allocator := context.allocator) -> []Cursor {
+	cursors := make([]Cursor, 1 + len(window.additional_cursors), allocator) // 1 + to exclude the main cursor.
+	cursors[0] = window.cursor
+	for i := 0; i < len(window.additional_cursors); i += 1 {
+		cursors[i + 1] = window.additional_cursors[i]
+	}
+
+	return cursors
+}
+

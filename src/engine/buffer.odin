@@ -4,6 +4,7 @@ import "base:intrinsics"
 import "core:fmt"
 import "core:mem"
 import "core:os"
+import "core:slice"
 import "core:simd"
 import "core:strings"
 import "core:unicode/utf8"
@@ -113,36 +114,45 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 }
 
 buffer_insert_char :: proc(window: ^Window, char: rune) {
-	using window
-	assert(utf8.valid_rune(char), "Invalid UTF-8 rune inserted")
-	if !is_char_supported(char) do return
-	old_len := len(buffer.data)
+    using window
+    assert(utf8.valid_rune(char), "Invalid UTF-8 rune inserted")
+    if !is_char_supported(char) do return
+    old_len := len(buffer.data)
 
-	offset := cursor.pos
-	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
-	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
+    // Get sorted cursors (right to left to avoid shifting issues)
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-	// Encode rune into UTF-8.
-	encoded, n_bytes := utf8.encode_rune(char)
+    // Process each cursor from right to left
+    for cursor_ptr in cursors {
+        offset := cursor_ptr.pos
+        assert(offset >= 0, "Cursor offset must be greater or equal to 0")
+        assert(offset <= len(buffer.data), "Cursor cannot be bigger than the length of the buffer")
 
-	assert(len(buffer.data) >= 0, "Buffer length corrupted")
-	assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
+        // Encode rune into UTF-8
+        encoded, n_bytes := utf8.encode_rune(char)
 
-	// Make space for new character.
-	resize(&buffer.data, len(buffer.data) + n_bytes)
+        // Make space for new character
+        resize(&buffer.data, len(buffer.data) + n_bytes)
+        if offset < len(buffer.data) - n_bytes {
+            copy(buffer.data[offset + n_bytes:], buffer.data[offset:])
+        }
 
-	// Move existing text to make room.
-	if offset < len(buffer.data) - n_bytes {
-		copy(buffer.data[offset + n_bytes:], buffer.data[offset:])
-	}
+        // Insert new character
+        copy(buffer.data[offset:], encoded[0:n_bytes])
 
-	// Insert new character.
-	copy(buffer.data[offset:], encoded[0:n_bytes])
-	cursor.pos += n_bytes
-	buffer_mark_dirty(buffer)
-	assert(len(buffer.data) >= old_len + n_bytes, "Insertion failed to grow buffer")
+        // Update this cursor’s position
+        cursor_ptr.pos += n_bytes
 
-	buffer_update_line_starts(window, offset)
+        // Adjust other cursors to the right of this one
+        adjust_cursors(cursors, cursor_ptr, offset, true, n_bytes)
+
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, offset)
+    }
+
+    update_cursor_lines_and_cols(buffer, cursors) // Update line and col for all cursors.
+    update_cursors_from_temp_slice(window, cursors) // Sync the updated cursors back to window
 }
 
 buffer_insert_tab :: proc(window: ^Window, allocator := context.allocator) {
