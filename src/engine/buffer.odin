@@ -1130,75 +1130,91 @@ buffer_update_cursor_line_col :: proc(window: ^Window) {
 // and content, typically called after editing operations that affect line structure.
 buffer_update_indentation :: proc(window: ^Window, allocator := context.allocator) {
     using window
-    
-    if cursor.line <= 0 do return
-    assert(cursor.line <= len(buffer.line_starts), "Current line must be valid")
 
-    // Get the previous line.
-    prev_line := cursor.line - 1
-    assert(prev_line >= 0 && prev_line < len(buffer.line_starts), "Previous line index must be valid")
-    line_start := buffer.line_starts[prev_line]
-    line_end := buffer.line_starts[prev_line + 1] - 1 if prev_line + 1 < len(buffer.line_starts) else len(buffer.data)
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors)
 
-    // Calculate base indentation from the previous line.
-    indent_end := line_start
-    for indent_end < line_end && buffer.data[indent_end] == ' ' {
-        indent_end += 1
+    for cursor_ptr in cursors {
+	    if cursor_ptr.line <= 0 do return
+	    assert(cursor_ptr.line <= len(buffer.line_starts), "Current line must be valid")
+
+	    // Get the previous line.
+	    prev_line := cursor_ptr.line - 1
+	    assert(prev_line >= 0 && prev_line < len(buffer.line_starts), "Previous line index must be valid")
+	    line_start := buffer.line_starts[prev_line]
+	    line_end := buffer.line_starts[prev_line + 1] - 1 if prev_line + 1 < len(buffer.line_starts) else len(buffer.data)
+
+	    // Calculate base indentation from the previous line.
+	    indent_end := line_start
+	    for indent_end < line_end && buffer.data[indent_end] == ' ' {
+	        indent_end += 1
+	    }
+	    assert(indent_end >= line_start && indent_end <= line_end, "Indentation end must be within previous line boundaries")
+	    base_indent := indent_end - line_start
+
+	    // Check if the previous line ends with an opening delimiter.
+	    extra_indent := 0
+	    if line_end > line_start {
+	        last_char := buffer.data[line_end - 1]
+	        if last_char == '{' || last_char == '(' || last_char == '[' {
+	            extra_indent = tab_width
+	        }
+	    }
+
+	    // Calculate total desired indentation.
+	    total_indent := base_indent + extra_indent
+	    assert(total_indent >= 0, "Total indentation must be non-negative")
+
+	    // Get the current line's start position.
+	    current_line_start := buffer.line_starts[cursor_ptr.line]
+	    current_indent_end := current_line_start
+	    for current_indent_end < len(buffer.data) && buffer.data[current_indent_end] == ' ' {
+	        current_indent_end += 1
+	    }
+	    assert(current_indent_end >= current_line_start && current_indent_end <= len(buffer.data), "Current indentation end must be within buffer bounds")
+	    current_indent := current_indent_end - current_line_start
+
+	    // Adjust current line's indentation if necessary.
+	    if current_indent != total_indent {
+	    	delta := 0 
+	    	
+	        // Remove existing indentation.
+	        if current_indent > 0 {
+	            copy(buffer.data[current_line_start:], buffer.data[current_indent_end:])
+	            old_len := len(buffer.data)
+	            resize(&buffer.data, len(buffer.data) - current_indent)
+	            assert(len(buffer.data) == old_len - current_indent, "Buffer resize after removing indentation failed")
+	            cursor_ptr.pos -= current_indent
+	            delta -= current_indent
+	        }
+
+	        // Insert new indentation.
+	        if total_indent > 0 {
+	            indent_str := strings.repeat(" ", total_indent, allocator)
+	            defer delete(indent_str, allocator)
+	            text_bytes := transmute([]u8)indent_str
+	            old_len := len(buffer.data)
+	            resize(&buffer.data, len(buffer.data) + total_indent)
+	            assert(len(buffer.data) == old_len + total_indent, "Buffer resize after inserting indentation failed")
+	            copy(buffer.data[current_line_start + total_indent:], buffer.data[current_line_start:])
+	            copy(buffer.data[current_line_start:], text_bytes)
+	            cursor_ptr.pos += total_indent
+	            delta += total_indent
+	        }
+
+	        // Adjust other cursors based on net change in buffer size.
+	        if delta != 0 {
+	    		 adjust_cursors(cursors, cursor_ptr, current_line_start, delta > 0, abs(delta))
+	        }
+
+	        buffer_mark_dirty(buffer)
+	        buffer_update_line_starts(window, current_line_start)
+	    }
+
+		assert(cursor_ptr.pos >= 0 && cursor_ptr.pos <= len(buffer.data), "cursor_ptr position must be within buffer bounds after adjustment")
     }
-    assert(indent_end >= line_start && indent_end <= line_end, "Indentation end must be within previous line boundaries")
-    base_indent := indent_end - line_start
-
-    // Check if the previous line ends with an opening delimiter.
-    extra_indent := 0
-    if line_end > line_start {
-        last_char := buffer.data[line_end - 1]
-        if last_char == '{' || last_char == '(' || last_char == '[' {
-            extra_indent = tab_width
-        }
-    }
-
-    // Calculate total desired indentation.
-    total_indent := base_indent + extra_indent
-    assert(total_indent >= 0, "Total indentation must be non-negative")
-
-    // Get the current line's start position.
-    current_line_start := buffer.line_starts[cursor.line]
-    current_indent_end := current_line_start
-    for current_indent_end < len(buffer.data) && buffer.data[current_indent_end] == ' ' {
-        current_indent_end += 1
-    }
-    assert(current_indent_end >= current_line_start && current_indent_end <= len(buffer.data), "Current indentation end must be within buffer bounds")
-    current_indent := current_indent_end - current_line_start
-
-    // Adjust current line's indentation if necessary.
-    if current_indent != total_indent {
-        // Remove existing indentation.
-        if current_indent > 0 {
-            copy(buffer.data[current_line_start:], buffer.data[current_indent_end:])
-            old_len := len(buffer.data)
-            resize(&buffer.data, len(buffer.data) - current_indent)
-            assert(len(buffer.data) == old_len - current_indent, "Buffer resize after removing indentation failed")
-            cursor.pos -= current_indent
-        }
-
-        // Insert new indentation.
-        if total_indent > 0 {
-            indent_str := strings.repeat(" ", total_indent, allocator)
-            defer delete(indent_str, allocator)
-            text_bytes := transmute([]u8)indent_str
-            old_len := len(buffer.data)
-            resize(&buffer.data, len(buffer.data) + total_indent)
-            assert(len(buffer.data) == old_len + total_indent, "Buffer resize after inserting indentation failed")
-            copy(buffer.data[current_line_start + total_indent:], buffer.data[current_line_start:])
-            copy(buffer.data[current_line_start:], text_bytes)
-            cursor.pos += total_indent
-        }
-
-        buffer_mark_dirty(buffer)
-        buffer_update_line_starts(window, current_line_start)
-    }
-
-	assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position must be within buffer bounds after adjustment")
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
 }
 
 get_char_class :: proc(r: rune, word_type: Word_Type) -> Char_Class {
