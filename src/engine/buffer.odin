@@ -88,29 +88,42 @@ buffer_load_file :: proc(
 buffer_insert_text :: proc(window: ^Window, text: string) {
 	using window
 	assert(len(text) != 0, "The length of the text should not be 0")
-	offset := cursor.pos
-	assert(offset >= 0, "Cursor offset must be greater or equal to 0")
-	assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
-
 	text_bytes := transmute([]u8)text
+	n_bytes := len(text_bytes)
+	
+	cursors := get_sorted_cursors(window, context.temp_allocator)
+	defer delete(cursors)
 
-	assert(len(buffer.data) >= 0, "Buffer length corrupted")
-	assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
+	for cursor_ptr in cursors {
+		offset := cursor_ptr.pos
+		assert(offset >= 0, "Cursor offset must be greater or equal to 0")
+		assert(!(offset > len(buffer.data)), "Cursor cannot be bigger than the length of the buffer")
 
-	// Make space for new text.
-	resize(&buffer.data, len(buffer.data) + len(text_bytes))
+		
+		// Make space for new text.
+		resize(&buffer.data, len(buffer.data) + len(text_bytes))
+		
+		// Move existing text to make room.
+		if (len(buffer.data) - len(text_bytes)) > offset {
+			copy(buffer.data[offset + len(text_bytes):], buffer.data[offset:])
+		}
+		
+		
+		// Insert new text.
+		copy(buffer.data[offset:], text_bytes)
+		cursor_ptr.pos += n_bytes
+		adjust_cursors(cursors, cursor_ptr, offset, true, n_bytes)
+		
+		buffer_mark_dirty(buffer)
 
-	// Move existing text to make room.
-	if (len(buffer.data) - len(text_bytes)) > offset {
-		copy(buffer.data[offset + len(text_bytes):], buffer.data[offset:])
+		buffer_update_line_starts(window, offset)
+
+		assert(len(buffer.data) >= 0, "Buffer length corrupted")
+		assert(cursor.pos <= len(buffer.data), "Cursor position out of bounds")
 	}
 
-	// Insert new text.
-	copy(buffer.data[offset:], text_bytes)
-	cursor.pos += len(text_bytes)
-	buffer_mark_dirty(buffer)
-
-	buffer_update_line_starts(window, offset)
+	update_cursor_lines_and_cols(buffer, cursors)
+	update_cursors_from_temp_slice(window, cursors)
 }
 
 buffer_insert_char :: proc(window: ^Window, char: rune) {

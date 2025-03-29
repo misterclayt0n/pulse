@@ -18,7 +18,7 @@ main :: proc() {
 	if len(os.args) > 1 do filename = os.args[1]
 
 	rl.SetConfigFlags({.WINDOW_RESIZABLE})
-	rl.InitWindow(rl.GetScreenWidth(), rl.GetScreenHeight(), "Pulse")
+	rl.InitWindow(1080, 970, "Pulse")
 	rl.SetWindowMonitor(0)
 
 	// NOTE: Destroy the arena first.
