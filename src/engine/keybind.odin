@@ -577,22 +577,63 @@ press_and_repeat :: proc(key: rl.KeyboardKey) -> bool {
 }
 
 @(private)
-insert_newline :: proc(p: ^Pulse, above: bool) {
-	if above {
-		move_cursors(p.current_window, .LINE_START)
-		buffer_insert_char(p.current_window, '\n')
-		move_cursors(p.current_window, .UP)
-		buffer_update_indentation(p.current_window)
-		change_mode(p, .INSERT)
-	} else {
-		current_line := p.current_window.cursor.line
-		current_line_start := p.current_window.buffer.line_starts[current_line]
-		current_line_length := buffer_line_length(p.current_window.buffer, current_line)
+insert_newline :: proc(p: ^Pulse, above: bool, allocator := context.allocator) {
+	window := p.current_window
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-		// Move to true end of current line's content (before any existing newline)
-		p.current_window.cursor.pos = current_line_start + current_line_length
-		buffer_insert_char(p.current_window, '\n')
-		buffer_update_indentation(p.current_window)
-		change_mode(p, .INSERT)
-	}
+        if above {
+        for cursor_ptr in cursors {
+            cursor_ptr.pos = window.buffer.line_starts[cursor_ptr.line]
+            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, false, 0) // No byte adjustment, just sync.
+
+            // Insert newline at this position.
+            resize(&window.buffer.data, len(window.buffer.data) + 1)
+            if cursor_ptr.pos < len(window.buffer.data) - 1 {
+                copy(window.buffer.data[cursor_ptr.pos + 1:], window.buffer.data[cursor_ptr.pos:])
+            }
+            window.buffer.data[cursor_ptr.pos] = '\n'
+            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, true, 1) // Shift cursors right by 1.
+
+            // Move cursor up to the newly inserted line
+            cursor_ptr.pos = window.buffer.line_starts[cursor_ptr.line] // Already at line start after insert.
+            buffer_mark_dirty(window.buffer)
+            buffer_update_line_starts(window, cursor_ptr.pos)
+        }
+
+        // Update line and column for all cursors after insertions.
+        update_cursor_lines_and_cols(window.buffer, cursors)
+        update_cursors_from_temp_slice(window, cursors)
+
+        // Apply indentation to the newly inserted lines.
+        buffer_update_indentation(window, allocator)
+    } else {
+        for cursor_ptr in cursors {
+            current_line := cursor_ptr.line
+            current_line_start := window.buffer.line_starts[current_line]
+            current_line_length := buffer_line_length(window.buffer, current_line)
+
+            // Move to the true end of the current line's content (before any existing newline).
+            cursor_ptr.pos = current_line_start + current_line_length
+            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, false, 0) // Sync positions.
+
+            // Insert newline at this position.
+            resize(&window.buffer.data, len(window.buffer.data) + 1)
+            if cursor_ptr.pos < len(window.buffer.data) - 1 {
+                copy(window.buffer.data[cursor_ptr.pos + 1:], window.buffer.data[cursor_ptr.pos:])
+            }
+            window.buffer.data[cursor_ptr.pos] = '\n'
+            cursor_ptr.pos += 1 // Move cursor to start of new line.
+            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos - 1, true, 1) // Shift cursors right by 1.
+
+            buffer_mark_dirty(window.buffer)
+            buffer_update_line_starts(window, cursor_ptr.pos - 1)
+        }
+
+        update_cursor_lines_and_cols(window.buffer, cursors)
+        update_cursors_from_temp_slice(window, cursors)
+        buffer_update_indentation(window, allocator)
+    }
+
+    change_mode(p, .INSERT)
 }

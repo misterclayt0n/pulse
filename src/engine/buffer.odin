@@ -183,59 +183,82 @@ buffer_insert_newline :: proc(window: ^Window, allocator := context.allocator) {
 
 buffer_insert_closing_delimiter :: proc(window: ^Window, delimiter: rune, allocator := context.allocator) {
     using window
+    assert(utf8.rune_size(delimiter) == 1, "Delimiter must be a single-byte character")
 
-    buffer_insert_char(window, delimiter)
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors)
 
-    matching_open := get_matching_open_delimiter(delimiter)
-    if matching_open == 0 do return
-
-    open_pos := find_matching_open_delimiter(buffer, cursor.pos - 1, matching_open, delimiter)
-    if open_pos == -1 do return
-
-    // Get the line of the opening delimiter.
-    open_line := get_line_from_pos(buffer, open_pos)
-    open_line_start := buffer.line_starts[open_line]
-
-    // Calculate the indentation of the opening delimiter's line.
-    indent_end := open_line_start
-    for indent_end < len(buffer.data) && buffer.data[indent_end] == ' ' {
-        indent_end += 1
-    }
-    base_indent := indent_end - open_line_start
-
-    // Get the current line's indentation.
-    current_line := cursor.line
-    current_line_start := buffer.line_starts[current_line]
-    current_indent_end := current_line_start
-    for current_indent_end < len(buffer.data) && buffer.data[current_indent_end] == ' ' {
-        current_indent_end += 1
-    }
-    current_indent := current_indent_end - current_line_start
-
-    // Adjust the current line's indentation if it doesn't match.
-    desired_indent := base_indent
-    if current_indent != desired_indent {
-        // Remove existing indentation.
-        if current_indent > 0 {
-            copy(buffer.data[current_line_start:], buffer.data[current_indent_end:])
-            resize(&buffer.data, len(buffer.data) - current_indent)
-            cursor.pos -= current_indent
+    for cursor_ptr in cursors {
+        // Insert the closing delimiter at the cursor's position.
+        offset := cursor_ptr.pos
+        delimiter_byte := byte(delimiter)
+        resize(&buffer.data, len(buffer.data) + 1)
+        if offset < len(buffer.data) - 1 {
+            copy(buffer.data[offset + 1:], buffer.data[offset:])
         }
-
-        // Insert new indentation.
-        if desired_indent > 0 {
-            indent_str := strings.repeat(" ", desired_indent, allocator)
-            defer delete(indent_str, allocator)
-            text_bytes := transmute([]u8)indent_str
-            resize(&buffer.data, len(buffer.data) + desired_indent)
-            copy(buffer.data[current_line_start + desired_indent:], buffer.data[current_line_start:])
-            copy(buffer.data[current_line_start:], text_bytes)
-            cursor.pos += desired_indent
-        }
-
+        buffer.data[offset] = delimiter_byte
+        cursor_ptr.pos += 1
+        adjust_cursors(cursors, cursor_ptr, offset, true, 1) // Adjust other cursors to the right.
         buffer_mark_dirty(buffer)
-        buffer_update_line_starts(window, current_line_start)
+        buffer_update_line_starts(window, offset)
+
+        // Find the matching opening delimiter.
+        matching_open := get_matching_open_delimiter(delimiter)
+        if matching_open == 0 do continue // No matching open delimiter, skip indentation.
+
+        open_pos := find_matching_open_delimiter(buffer, cursor_ptr.pos - 1, matching_open, delimiter)
+        if open_pos == -1 do continue // Matching delimiter not found, skip.
+
+        // Calculate base indentation from the opening delimiter's line.
+        open_line := get_line_from_pos(buffer, open_pos)
+        open_line_start := buffer.line_starts[open_line]
+        indent_end := open_line_start
+        for indent_end < len(buffer.data) && buffer.data[indent_end] == ' ' {
+            indent_end += 1
+        }
+        base_indent := indent_end - open_line_start
+        
+        // Get the current line’s indentation.
+        current_line := cursor_ptr.line
+        current_line_start := buffer.line_starts[current_line]
+        current_indent_end := current_line_start
+        for current_indent_end < len(buffer.data) && buffer.data[current_indent_end] == ' ' {
+            current_indent_end += 1
+        }
+        current_indent := current_indent_end - current_line_start
+
+        // Adjust indentation if necessary.
+        desired_indent := base_indent
+        if current_indent != desired_indent {
+            // Remove existing indentation.
+            if current_indent > 0 {
+                copy(buffer.data[current_line_start:], buffer.data[current_indent_end:])
+                resize(&buffer.data, len(buffer.data) - current_indent)
+                cursor_ptr.pos -= current_indent
+                adjust_cursors(cursors, cursor_ptr, current_line_start, false, current_indent)
+            }
+
+            // Insert new indentation.
+            if desired_indent > 0 {
+                indent_str := strings.repeat(" ", desired_indent, allocator)
+                defer delete(indent_str, allocator)
+                text_bytes := transmute([]u8)indent_str
+                resize(&buffer.data, len(buffer.data) + desired_indent)
+                copy(buffer.data[current_line_start + desired_indent:], buffer.data[current_line_start:])
+                copy(buffer.data[current_line_start:], text_bytes)
+                cursor_ptr.pos += desired_indent
+                adjust_cursors(cursors, cursor_ptr, current_line_start, true, desired_indent)
+            }
+
+            // Update buffer state after indentation adjustment.
+            buffer_mark_dirty(buffer)
+            buffer_update_line_starts(window, current_line_start)
+        }
     }
+
+    // Update all cursors' line and column fields after all modifications.
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
 }
 
 buffer_delete_char :: proc(window: ^Window) {
