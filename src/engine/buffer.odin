@@ -379,45 +379,115 @@ buffer_delete_forward_char :: proc(window: ^Window) {
 }
 
 buffer_delete_word :: proc(window: ^Window) {
-	using window
-	if cursor.pos <= 0 do return
+    using window
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-	original_pos := cursor.pos
-	start_pos := original_pos
+    assert(len(buffer.data) >= 0, "Buffer data length must be non-negative")
+    assert(len(cursors) > 0, "At least one cursor must be present")
 
-	// Move to word start.
-	cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
+    // Collect deletion ranges.
+    ranges := make([dynamic][2]int, 0, len(cursors), context.temp_allocator)
+    defer delete(ranges)
 
-	// Skip whitespace backwards.
-	for cursor.pos > 0 && is_whitespace_byte(buffer.data[cursor.pos]) {
-		cursor.pos = prev_rune_start(buffer.data[:], cursor.pos)
-	}
+    for cursor_ptr in cursors {
+        if cursor_ptr.pos <= 0 do continue
 
-	// Move through word character.
-	if cursor.pos > 0 {
-		current_rune, _ := utf8.decode_rune(buffer.data[cursor.pos:])
-		is_word := is_word_character(current_rune)
+        original_pos := cursor_ptr.pos
+        start_pos := original_pos
 
-		for cursor.pos > 0 {
-			prev_pos := prev_rune_start(buffer.data[:], cursor.pos)
-			r, _ := utf8.decode_rune(buffer.data[prev_pos:])
+        // Move to word start.
+        start_pos = prev_rune_start(buffer.data[:], start_pos)
 
-			if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word do break
+        // Skip whitespace backwards.
+        for start_pos > 0 && is_whitespace_byte(buffer.data[start_pos]) {
+            start_pos = prev_rune_start(buffer.data[:], start_pos)
+        }
 
-			cursor.pos = prev_pos
-		}
-	}
+        // Move through word characters.
+        if start_pos > 0 {
+            current_rune, _ := utf8.decode_rune(buffer.data[start_pos:])
+            is_word := is_word_character(current_rune)
 
-	// Bytes do delete.
-	delete_start := cursor.pos
-	delete_size := original_pos - delete_start
+            for start_pos > 0 {
+                prev_pos := prev_rune_start(buffer.data[:], start_pos)
+                r, _ := utf8.decode_rune(buffer.data[prev_pos:])
 
-	// Actually delete something...
-	copy(buffer.data[delete_start:], buffer.data[original_pos:])
-	resize(&buffer.data, len(buffer.data) - delete_size)
-	cursor.pos = delete_start
-	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window, delete_start)
+                if is_whitespace_byte(buffer.data[prev_pos]) || is_word_character(r) != is_word do break
+
+                start_pos = prev_pos
+            }
+        }
+
+        // Ensure start_pos is not greater than original_pos.
+        if start_pos < original_pos {
+            append(&ranges, [2]int{start_pos, original_pos})
+            assert(start_pos >= 0 && start_pos < len(buffer.data), "Start position out of bounds")
+            assert(original_pos <= len(buffer.data), "Original position exceeds buffer length")
+            assert(start_pos < original_pos, "Start position must be less than original position")
+        }
+    }
+
+    // Sort ranges by start position.
+    slice.sort_by(ranges[:], proc(a, b: [2]int) -> bool { return a[0] < b[0] })
+
+    // Merge overlapping ranges.
+    merged_ranges := make([dynamic][2]int, 0, len(ranges), context.temp_allocator)
+    defer delete(merged_ranges)
+
+    for r in ranges {
+        if len(merged_ranges) == 0 {
+            append(&merged_ranges, r)
+        } else {
+            last := &merged_ranges[len(merged_ranges) - 1]
+            if r[0] <= last[1] {
+                last[1] = max(last[1], r[1])
+            } else {
+                append(&merged_ranges, r)
+            }
+        }
+    }
+
+    // Perform deletions from the end to avoid index shifting issues.
+    for i := len(merged_ranges) - 1; i >= 0; i -= 1 {
+        r := merged_ranges[i]
+        start := r[0]
+        end := r[1]
+        delete_size := end - start
+
+        assert(start >= 0 && start < len(buffer.data), "Deletion start out of bounds")
+        assert(end <= len(buffer.data), "Deletion end exceeds buffer length")
+        assert(delete_size > 0, "Deletion size must be positive")
+
+        // Delete the range.
+        copy(buffer.data[start:], buffer.data[end:])
+        resize(&buffer.data, len(buffer.data) - delete_size)
+
+        // Adjust cursor positions.
+        for cursor_ptr in cursors {
+            if cursor_ptr.pos > start {
+                cursor_ptr.pos -= delete_size
+                if cursor_ptr.pos < start do cursor_ptr.pos = start
+                assert(cursor_ptr.pos >= 0 && cursor_ptr.pos <= len(buffer.data), "Cursor position out of bounds after adjustment")
+            }
+        }
+    }
+
+    // Update buffer state.
+    if len(merged_ranges) > 0 {
+        earliest_start := merged_ranges[0][0]
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, earliest_start)
+    }
+
+    // Update cursor lines and columns.
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
+
+    for cursor_ptr in cursors {
+        assert(cursor_ptr.pos >= 0 && cursor_ptr.pos <= len(buffer.data), "Final cursor position out of bounds")
+        assert(cursor_ptr.line >= 0 && cursor_ptr.line < len(buffer.line_starts), "Cursor line out of bounds")
+    }
 }
 
 // FIX: While at last line, should just delete the line and move up.
