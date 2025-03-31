@@ -349,18 +349,33 @@ buffer_delete_char :: proc(window: ^Window) {
 }
 
 buffer_delete_forward_char :: proc(window: ^Window) {
-	using window
-	if cursor.pos >= len(buffer.data) do return
+    using window
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-	n_bytes := next_rune_length(buffer.data[:], cursor.pos)
-	if n_bytes == 0 do return
+    for cursor_ptr in cursors {
+        if cursor_ptr.pos >= len(buffer.data) do continue
 
-	// Delete the rune's bytes by shifting data to the left like a real chad.
-	copy(buffer.data[cursor.pos:], buffer.data[cursor.pos + n_bytes:])
-	resize(&buffer.data, len(buffer.data) - n_bytes)
+        n_bytes := next_rune_length(buffer.data[:], cursor_ptr.pos)
+        if n_bytes == 0 do continue
 
-	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window, cursor.pos)
+        // Delete the rune's bytes by shifting data to the left.
+        copy(buffer.data[cursor_ptr.pos:], buffer.data[cursor_ptr.pos + n_bytes:])
+        resize(&buffer.data, len(buffer.data) - n_bytes)
+
+        // Adjust positions of other cursors to the right of the deletion point.
+        for other_cursor in cursors {
+            if other_cursor != cursor_ptr && other_cursor.pos > cursor_ptr.pos {
+                other_cursor.pos -= n_bytes
+            }
+        }
+
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, cursor_ptr.pos)
+    }
+
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
 }
 
 buffer_delete_word :: proc(window: ^Window) {
