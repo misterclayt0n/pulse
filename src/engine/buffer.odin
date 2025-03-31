@@ -264,60 +264,88 @@ buffer_insert_closing_delimiter :: proc(window: ^Window, delimiter: rune, alloca
 buffer_delete_char :: proc(window: ^Window) {
     using window
     assert(len(buffer.data) >= 0, "Delete called on invalid buffer")
-    assert(cursor.line >= 0 && cursor.line < len(buffer.line_starts), "Cursor line out of bounds")
-    old_len := len(buffer.data)
 
-    if cursor.pos <= 0 do return // Stop deleting if at the buffer's start.
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-    line_start := buffer.line_starts[cursor.line]
-    bytes_to_delete := 0
-    start_index := cursor.pos
+    for cursor_ptr in cursors {
+    	assert(cursor_ptr.pos >= 0 && cursor_ptr.pos <= len(buffer.data), "Cursor position out of bounds")
+        if cursor_ptr.pos <= 0 do continue // Skip if at buffer start.
 
-    if cursor.pos == line_start && cursor.line > 0 {
-        // Cursor is at the start of a line (not the first line).
-        // Delete the previous newline to join with the previous line.
-        start_index = cursor.pos - 1
-        assert(buffer.data[start_index] == '\n', "Expected newline before line start")
-        bytes_to_delete = 1
-    }
-
-    if cursor.pos > line_start {
-        // Cursor is within the line.
-        is_indentation := true
-        for pos := line_start; pos < cursor.pos; pos += 1 {
-            if buffer.data[pos] != ' ' && buffer.data[pos] != '\t' {
-                is_indentation = false
+        // Determine the current line based on position and updated line_starts.
+        line := 0
+        for i in 1..<len(buffer.line_starts) {
+            if cursor_ptr.pos < buffer.line_starts[i] {
+                line = i - 1
                 break
             }
         }
+        if cursor_ptr.pos >= buffer.line_starts[len(buffer.line_starts)-1] {
+            line = len(buffer.line_starts) - 1
+        }
+        
+        assert(line >= 0 && line < len(buffer.line_starts), "Calculated line out of bounds")
+        line_start := buffer.line_starts[line]
 
-        if is_indentation {
-            // Within indentation: delete up to tab_width spaces or one character.
-            if buffer.data[cursor.pos - 1] == ' ' {
+        bytes_to_delete := 0
+        start_index := cursor_ptr.pos
+
+        if cursor_ptr.pos == line_start && line > 0 {
+            // Delete the previous newline.
+            start_index = cursor_ptr.pos - 1
+            assert(buffer.data[start_index] == '\n', "Expected newline before line start")
+            bytes_to_delete = 1
+        } else if cursor_ptr.pos > line_start {
+            // Check if in indentation.
+            is_indentation := true
+            for pos := line_start; pos < cursor_ptr.pos; pos += 1 {
+                if buffer.data[pos] != ' ' && buffer.data[pos] != '\t' {
+                    is_indentation = false
+                    break
+                }
+            }
+            if is_indentation && buffer.data[cursor_ptr.pos - 1] == ' ' {
+                // Delete up to tab_width spaces.
                 spaces := 0
-                pos := cursor.pos - 1
+                pos := cursor_ptr.pos - 1
                 for pos >= line_start && buffer.data[pos] == ' ' && spaces < window.tab_width {
                     spaces += 1
                     pos -= 1
                 }
                 bytes_to_delete = spaces
-                start_index = cursor.pos - spaces
+                start_index = cursor_ptr.pos - spaces
+            } else {
+                // Delete one rune.
+                start_index = prev_rune_start(buffer.data[:], cursor_ptr.pos)
+                bytes_to_delete = cursor_ptr.pos - start_index
             }
-        } else {
-            // Not in indentation: delete one character.
-            start_index = prev_rune_start(buffer.data[:], cursor.pos)
-            bytes_to_delete = cursor.pos - start_index
+        }
+
+        if bytes_to_delete > 0 {
+            assert(start_index <= cursor_ptr.pos, "Start index for deletion is after cursor position")
+            assert(start_index + bytes_to_delete <= len(buffer.data), "Deletion range exceeds buffer length")
+            
+            // Perform deletion.
+            old_len := len(buffer.data)
+            copy(buffer.data[start_index:], buffer.data[cursor_ptr.pos:])
+            resize(&buffer.data, len(buffer.data) - bytes_to_delete)
+            assert(len(buffer.data) == old_len - bytes_to_delete, "Buffer length mismatch after deletion")
+
+            // Adjust other cursors.
+            adjust_cursors(cursors, cursor_ptr, start_index, false, bytes_to_delete)
+
+            // Move current cursor.
+            cursor_ptr.pos = start_index
+
+            // Update line structure.
+            buffer_update_line_starts(window, start_index)
+            buffer_mark_dirty(buffer)
         }
     }
 
-    if bytes_to_delete > 0 {
-        copy(buffer.data[start_index:], buffer.data[cursor.pos:])
-        resize(&buffer.data, len(buffer.data) - bytes_to_delete)
-        assert(len(buffer.data) == old_len - bytes_to_delete, "Buffer length mismatch after deletion")
-        cursor.pos = start_index
-        buffer_mark_dirty(buffer)
-        buffer_update_line_starts(window, start_index)
-    }
+    // Update all cursors' line and col fields.
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
 }
 
 buffer_delete_forward_char :: proc(window: ^Window) {
