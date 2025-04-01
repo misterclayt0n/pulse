@@ -623,44 +623,96 @@ buffer_delete_line :: proc(window: ^Window) {
 
 // Works just like buffer_delete_line, but without cursor position adjustments
 buffer_change_line :: proc(window: ^Window) {
-	using window
-	current_line := cursor.line
-	if len(buffer.line_starts) == 0 do return // // Buffer empty, nothing to delete.
+    using window
+    if len(buffer.line_starts) == 0 do return // Buffer empty, nothing to change.
 
-	assert(
-		current_line >= 0 && current_line < len(buffer.line_starts),
-		"Current line out of bounds",
-	)
+    // Get all the active cursors.
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-	start_pos := buffer.line_starts[current_line]
-	assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of bounds")
+    // Build a set of unique lines from all cursors.
+    unique_lines := make(map[int]bool, len(cursors), context.temp_allocator)
+    for cursor_ptr in cursors {
+        line := cursor_ptr.line
+        if line >= len(buffer.line_starts) do line = len(buffer.line_starts) - 1
+        unique_lines[line] = true
+    }
 
-	end_pos := len(buffer.data)
-	if current_line < len(buffer.line_starts) - 1 {
-		end_pos = buffer.line_starts[current_line + 1] - 1 // Exclude newline.
-	}
-	assert(end_pos >= start_pos && end_pos <= len(buffer.data), "end_pos invalid")
+    ranges := make([dynamic][2]int, 0, len(unique_lines), context.temp_allocator)
+    for line in unique_lines {
+        start_pos := buffer.line_starts[line]
+        end_pos := len(buffer.data)
+        if line < len(buffer.line_starts) - 1 {
+            end_pos = buffer.line_starts[line + 1] - 1 // Exclude the newline.
+        }
+        append(&ranges, [2]int{start_pos, end_pos})
+    }
 
-	// Delete line content.
-	old_len := len(buffer.data)
-	copy(buffer.data[start_pos:], buffer.data[end_pos:])
-	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
-	assert(len(buffer.data) == old_len - (end_pos - start_pos), "Buffer resize mismatch")
+    // Sort the ranges by start position.
+    slice.sort_by(ranges[:], proc(a, b: [2]int) -> bool { return a[0] < b[0] })
 
+    // Merge overlapping or adjacent ranges (in case multiple cursors are on the same line).
+    merged_ranges := make([dynamic][2]int, 0, len(ranges), context.temp_allocator)
+    for r in ranges {
+        if len(merged_ranges) == 0 {
+            append(&merged_ranges, r)
+        } else {
+            last := &merged_ranges[len(merged_ranges) - 1]
+            if r[0] <= last[1] { // overlapping or adjacent
+                last[1] = max(last[1], r[1])
+            } else {
+                append(&merged_ranges, r)
+            }
+        }
+    }
 
-	// Verify line_starts integrity.
-	assert(len(buffer.line_starts) > 0, "Line starts should not be empty after update")
-	assert(buffer.line_starts[0] == 0, "First line start should be 0")
+    // Delete the content for each merged range in reverse order.
+    for i := len(merged_ranges) - 1; i >= 0; i -= 1 {
+        r := merged_ranges[i]
+        start_pos := r[0]
+        end_pos := r[1]
+        assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of bounds")
+        assert(end_pos >= start_pos && end_pos <= len(buffer.data), "end_pos invalid")
+        delete_size := end_pos - start_pos
 
-	cursor.pos = buffer.line_starts[current_line]
-	cursor.col = 0
-	assert(cursor.pos == buffer.line_starts[current_line], "Cursor position mismatch")
-	assert(cursor.col == 0, "Cursor column not reset")
+        old_len := len(buffer.data)
+        copy(buffer.data[start_pos:], buffer.data[end_pos:])
+        resize(&buffer.data, len(buffer.data) - delete_size)
+        assert(len(buffer.data) == old_len - delete_size, "Buffer resize mismatch")
 
-	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window, start_pos)
-	buffer_update_indentation(window)
+        // Adjust positions for all cursors.
+        for cursor_ptr in cursors {
+            if cursor_ptr.pos >= end_pos {
+                cursor_ptr.pos -= delete_size
+            } else if cursor_ptr.pos > start_pos {
+                cursor_ptr.pos = start_pos
+            }
+        }
+    }
+
+    // Update the buffer state.
+    if len(merged_ranges) > 0 {
+        earliest_start := merged_ranges[0][0]
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, earliest_start)
+    }
+
+    // Reset each cursor on a changed line to the beginning (and set its column to 0).
+    for cursor_ptr in cursors {
+        new_line := get_line_from_pos(buffer, cursor_ptr.pos)
+        cursor_ptr.line = new_line
+        cursor_ptr.pos = buffer.line_starts[new_line]
+        cursor_ptr.col = 0
+        assert(cursor_ptr.pos == buffer.line_starts[new_line], "Cursor position mismatch")
+        assert(cursor_ptr.col == 0, "Cursor column not reset")
+    }
+
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
+
+    buffer_update_indentation(window)
 }
+
 
 buffer_delete_to_line_end :: proc(window: ^Window) {
 	using window
