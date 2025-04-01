@@ -1077,43 +1077,78 @@ buffer_delete_range :: proc(window: ^Window, start, end: int) {
 buffer_join_lines :: proc(window: ^Window) {
 	using window
 
-	if cursor.line >= len(buffer.line_starts) - 1 do return // No next line exists, do nothing
+	// Same old thing.
+    all_cursors: [dynamic]^Cursor
+    defer delete(all_cursors)
+    append(&all_cursors, &cursor) 
+    for &c in additional_cursors {
+        append(&all_cursors, &c) 
+    }
 
-	current_line := cursor.line
-	next_line := current_line + 1
+    slice.sort_by(all_cursors[:], proc(a, b: ^Cursor) -> bool { return a.pos > b.pos })
 
-	current_line_end := buffer.line_starts[next_line] - 1
-	if current_line_end >= len(buffer.data) || buffer.data[current_line_end] != '\n' do return // No newline to remove
+    for c in all_cursors {
+        // Determine the current line based on the cursor's position.
+        current_line := get_line_from_pos(buffer, c.pos)
+        if current_line >= len(buffer.line_starts) - 1 do continue // No next line.
 
-	// Remove the newline by shifting data
-	next_line_start := buffer.line_starts[next_line]
-	bytes_to_remove := next_line_start - current_line_end
-	copy(buffer.data[current_line_end:], buffer.data[next_line_start:])
-	resize(&buffer.data, len(buffer.data) - bytes_to_remove)
+        next_line := current_line + 1
+        current_line_end := buffer.line_starts[next_line] - 1
+        if current_line_end >= len(buffer.data) || buffer.data[current_line_end] != '\n' do continue // No newline to remove.
 
-	join_pos := current_line_end
-	content_start := join_pos
-	for content_start < len(buffer.data) &&
-	    is_whitespace_byte(buffer.data[content_start]) &&
-	    buffer.data[content_start] != '\n' {
-		content_start += 1
-	}
+        // Remove the newline.
+        next_line_start := buffer.line_starts[next_line]
+        bytes_to_remove := next_line_start - current_line_end
+        copy(buffer.data[current_line_end:], buffer.data[next_line_start:])
+        resize(&buffer.data, len(buffer.data) - bytes_to_remove)
 
-	// Remove leading whitespace if any exists.
-	if content_start > join_pos {
-		remove_count := content_start - join_pos
-		copy(buffer.data[join_pos:], buffer.data[content_start:])
-		resize(&buffer.data, len(buffer.data) - remove_count)
-	}
+        // Adjust positions of all cursors after current_line_end.
+        for other_c in all_cursors {
+            if other_c.pos > current_line_end {
+                other_c.pos -= bytes_to_remove
+            }
+        }
 
-	// Insert a space at the join point.
-	resize(&buffer.data, len(buffer.data) + 1)
-	copy(buffer.data[join_pos + 1:], buffer.data[join_pos:])
-	buffer.data[join_pos] = ' '
+        // Find the start of content after leading whitespace.
+        join_pos := current_line_end
+        content_start := join_pos
+        for content_start < len(buffer.data) && 
+            is_whitespace_byte(buffer.data[content_start]) && 
+            buffer.data[content_start] != '\n' {
+            content_start += 1
+        }
 
-	// Update the line_starts array to reflect the new structure.
-	buffer_update_line_starts(window, join_pos)
-	buffer_mark_dirty(buffer)
+        // Remove leading whitespace if any exists.
+        if content_start > join_pos {
+            remove_count := content_start - join_pos
+            copy(buffer.data[join_pos:], buffer.data[content_start:])
+            resize(&buffer.data, len(buffer.data) - remove_count)
+
+            // Adjust positions of all cursors after join_pos.
+            for other_c in all_cursors {
+                if other_c.pos > join_pos {
+                    other_c.pos -= remove_count
+                }
+            }
+        }
+
+        // Insert a space at the join point.
+        resize(&buffer.data, len(buffer.data) + 1)
+        copy(buffer.data[join_pos + 1:], buffer.data[join_pos:])
+        buffer.data[join_pos] = ' '
+
+        // Adjust positions of all cursors at or after join_pos.
+        for other_c in all_cursors {
+            if other_c.pos >= join_pos {
+                other_c.pos += 1
+            }
+        }
+        c.pos = join_pos
+
+        buffer_update_line_starts(window, join_pos)
+    }
+
+    buffer_mark_dirty(buffer)
 }
 
 buffer_rebuild_line_starts :: proc(window: ^Window) {
