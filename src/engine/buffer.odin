@@ -715,32 +715,82 @@ buffer_change_line :: proc(window: ^Window) {
 
 
 buffer_delete_to_line_end :: proc(window: ^Window) {
-	using window
-	current_line := cursor.line
-	if current_line >= len(buffer.line_starts) do return
+    using window
+    // Get all active cursors.
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-	// Get line boundaries.
-	start_pos := buffer.line_starts[current_line]
-	end_pos := len(buffer.data) // Default to buffer end for last line.
+    // Map each line to its deletion range [start, end).
+    // For a given line, the deletion range starts at the smallest clamped cursor.pos
+    // and ends at the line end (for non-last lines: line_starts[line+1] - 1; otherwise, len(buffer.data)).
+    deletion_map := make(map[int][2]int, len(cursors), context.temp_allocator)
+    for cursor_ptr in cursors {
+        line := cursor_ptr.line
+        if line >= len(buffer.line_starts) do line = len(buffer.line_starts) - 1
 
-	// Adjust end_pos for non-last lines (exclude newline).
-	if current_line < len(buffer.line_starts) - 1 {
-		end_pos = buffer.line_starts[current_line + 1] - 1
-	}
+        start_pos := buffer.line_starts[line]
+        end_pos := len(buffer.data)
+        if line < len(buffer.line_starts) - 1 {
+            end_pos = buffer.line_starts[line + 1] - 1  // Exclude the newline.
+        }
 
-	// Clamp cursor position to valid range.
-	cursor_pos := clamp(cursor.pos, start_pos, end_pos)
+        // Clamp the cursor's position to the valid range.
+        clamped_pos := clamp(cursor_ptr.pos, start_pos, end_pos)
+        
+        // If a deletion range for this line already exists, update its start position to be the minimum.
+        existing, ok := deletion_map[line]
+        if ok {
+            new_start := min(existing[0], clamped_pos)
+            deletion_map[line] = [2]int{new_start, end_pos}
+        } else {
+            deletion_map[line] = [2]int{clamped_pos, end_pos}
+        }
+    }
 
-	// Calculate bytes to delete.
-	delete_count := end_pos - cursor_pos
-	if delete_count <= 0 do return
+    // Convert the deletion_map into a slice of ranges.
+    ranges := make([dynamic][2]int, 0, len(deletion_map), context.temp_allocator)
+    for _, r in deletion_map {
+        // Only add if there is something to delete.
+        if r[0] < r[1] {
+            append(&ranges, r)
+        }
+    }
+    if len(ranges) == 0 do return
 
-	// Actually perform the damn deletion.
-	copy(buffer.data[cursor_pos:], buffer.data[end_pos:])
-	resize(&buffer.data, len(buffer.data) - delete_count)
-	cursor.pos = cursor_pos
-	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window, cursor_pos)
+    // Sort ranges by start position (ascending).
+    slice.sort_by(ranges[:], proc(a, b: [2]int) -> bool { return a[0] < b[0] })
+
+    // Process each deletion range in reverse order to avoid shifting issues.
+    for i := len(ranges) - 1; i >= 0; i -= 1 {
+        r := ranges[i]
+        start_pos := r[0]
+        end_pos := r[1]
+        delete_count := end_pos - start_pos
+
+        // Perform deletion: shift the data after end_pos to start_pos.
+        old_len := len(buffer.data)
+        copy(buffer.data[start_pos:], buffer.data[end_pos:])
+        resize(&buffer.data, len(buffer.data) - delete_count)
+        assert(len(buffer.data) == old_len - delete_count, "Buffer resize mismatch")
+
+        // Adjust positions of all cursors.
+        for cursor_ptr in cursors {
+            if cursor_ptr.pos >= end_pos {
+                cursor_ptr.pos -= delete_count
+            } else if cursor_ptr.pos >= start_pos {
+                cursor_ptr.pos = start_pos
+            }
+        }
+    }
+
+    // Update the buffer state from the earliest deletion.
+    earliest_start := ranges[0][0]
+    buffer_mark_dirty(buffer)
+    buffer_update_line_starts(window, earliest_start)
+
+    // Update all cursors' line and column values.
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
 }
 
 buffer_delete_selection :: proc(window: ^Window) {
