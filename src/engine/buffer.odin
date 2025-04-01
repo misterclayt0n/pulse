@@ -7,6 +7,7 @@ import "core:os"
 import "core:slice"
 import "core:simd"
 import "core:strings"
+import "core:net"
 import "core:unicode/utf8"
 import rl "vendor:raylib"
 
@@ -490,73 +491,134 @@ buffer_delete_word :: proc(window: ^Window) {
     }
 }
 
-// FIX: While at last line, should just delete the line and move up.
 buffer_delete_line :: proc(window: ^Window) {
-	using window
-	if len(buffer.line_starts) == 0 do return // // Buffer empty, nothing to delete.
+    using window
+    if len(buffer.line_starts) == 0 do return // Buffer empty, nothing to delete.
 
-	current_line := cursor.line
-	if current_line >= len(buffer.line_starts) {
-		current_line = len(buffer.line_starts) - 1 // Clamp to valid line.
-	}
-	assert(
-		current_line >= 0 && current_line < len(buffer.line_starts),
-		"Current line index out of bounds",
-	)
+    cursors := get_sorted_cursors(window, context.temp_allocator)
+    defer delete(cursors, context.temp_allocator)
 
-	start_pos := buffer.line_starts[current_line]
-	end_pos := len(buffer.data)
-	if current_line < len(buffer.line_starts) - 1 {
-		end_pos = buffer.line_starts[current_line + 1] // Include newline.
-	} else if current_line > 0 && current_line == len(buffer.line_starts) - 1 {
-		// Last line: include the preceding newline if it exists.
-		start_pos = buffer.line_starts[current_line] - 1
-		assert(buffer.data[start_pos] == '\n', "Expected newline before last line")
-	}
+    // Collect unique lines to delete.
+    lines_to_delete := make(map[int]bool, len(cursors), context.temp_allocator)
+    defer delete(lines_to_delete)
 
-	// Assert deletion range validity.
-	assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of buffer bounds")
-	assert(
-		end_pos >= start_pos && end_pos <= len(buffer.data),
-		"end_pos invalid relative to start_pos or buffer",
-	)
+    for cursor_ptr in cursors {
+        current_line := cursor_ptr.line
+        if current_line >= len(buffer.line_starts) {
+            current_line = len(buffer.line_starts) - 1 // Clamp to valid line.
+        }
+        assert(current_line >= 0 && current_line < len(buffer.line_starts), "Cursor line index out of bounds")
+        lines_to_delete[current_line] = true
+    }
 
-	old_len := len(buffer.data)
-	copy(buffer.data[start_pos:], buffer.data[end_pos:])
-	resize(&buffer.data, len(buffer.data) - (end_pos - start_pos))
-	buffer_mark_dirty(buffer)
-	buffer_update_line_starts(window, start_pos)
+    // Convert to sorted slice of line ranges to delete.
+    ranges := make([dynamic][2]int, 0, len(lines_to_delete), context.temp_allocator)
+    defer delete(ranges)
 
-	assert(
-		len(buffer.data) == old_len - (end_pos - start_pos),
-		"Buffer length mismatch after deletion",
-	)
+    for line in lines_to_delete {
+        start_pos := buffer.line_starts[line]
+        end_pos := len(buffer.data)
+        if line < len(buffer.line_starts) - 1 {
+            end_pos = buffer.line_starts[line + 1] // Include newline.
+        } else if line > 0 && line == len(buffer.line_starts) - 1 {
+            // Last line: include the preceding newline if it exists.
+            start_pos = buffer.line_starts[line] - 1
+            assert(buffer.data[start_pos] == '\n', "Expected newline before last line")
+        }
+        append(&ranges, [2]int{start_pos, end_pos})
+    }
 
-	// Adjust cursor position.
-	if len(buffer.line_starts) == 0 {
-		cursor.line = 0
-		cursor.pos = 0
-		cursor.col = 0
-	} else if current_line < len(buffer.line_starts) {
-		cursor.line = current_line
-		cursor.pos = buffer.line_starts[current_line]
-		cursor.col = 0
-	} else {
-		cursor.line = len(buffer.line_starts) - 1
-		cursor.pos = buffer.line_starts[len(buffer.line_starts) - 1]
-		cursor.col = 0
-	}
+    // Sort ranges by start position (ascending) to process deletions from end to start later.
+    slice.sort_by(ranges[:], proc(a, b: [2]int) -> bool { return a[0] < b[0] })
 
-	// Post-deletion cursor assertions.
-	assert(cursor.line >= 0 && cursor.line < len(buffer.line_starts), "Cursor line out of bounds")
-	assert(
-		cursor.pos >= 0 && cursor.pos <= len(buffer.data),
-		"Cursor position out of buffer bounds",
-	)
-	assert(
-		cursor.pos == buffer.line_starts[cursor.line],
-		"Cursor position does not match line start",
-	)
+    // Merge overlapping or adjacent ranges.
+    merged_ranges := make([dynamic][2]int, 0, len(ranges), context.temp_allocator)
+    defer delete(merged_ranges)
+
+    for r in ranges {
+        if len(merged_ranges) == 0 {
+            append(&merged_ranges, r)
+        } else {
+            last := &merged_ranges[len(merged_ranges) - 1]
+            if r[0] <= last[1] {
+                last[1] = max(last[1], r[1])
+            } else {
+                append(&merged_ranges, r)
+            }
+        }
+    }
+
+    // Perform deletions from the end to avoid index shifting issues.
+    original_buffer_len := len(buffer.data)
+    total_deleted := 0
+    for i := len(merged_ranges) - 1; i >= 0; i -= 1 {
+        r := merged_ranges[i]
+        start_pos := r[0]
+        end_pos := r[1]
+
+        // Validate deletion range.
+        assert(start_pos >= 0 && start_pos <= len(buffer.data), "start_pos out of buffer bounds")
+        assert(end_pos >= start_pos && end_pos <= len(buffer.data), "end_pos invalid relative to start_pos or buffer")
+
+        delete_size := end_pos - start_pos
+        copy(buffer.data[start_pos:], buffer.data[end_pos:])
+        resize(&buffer.data, len(buffer.data) - delete_size)
+        total_deleted += delete_size
+
+        // Adjust cursor positions.
+        for cursor_ptr in cursors {
+            if cursor_ptr.pos >= end_pos {
+                cursor_ptr.pos -= delete_size
+            } else if cursor_ptr.pos > start_pos {
+                cursor_ptr.pos = start_pos
+            }
+        }
+    }
+
+    // Update buffer state if any deletions occurred.
+    if len(merged_ranges) > 0 {
+        earliest_start := merged_ranges[0][0]
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, earliest_start)
+
+        // Validate buffer length.
+        assert(len(buffer.data) == original_buffer_len - total_deleted, "Buffer length mismatch after deletions")
+    }
+
+    // Adjust cursor positions post-deletion.
+    for cursor_ptr in cursors {
+        if len(buffer.line_starts) == 0 {
+            cursor_ptr.line = 0
+            cursor_ptr.pos = 0
+            cursor_ptr.col = 0
+        } else {
+            // Find the new line for each cursor based on its adjusted position.
+            new_line := 0
+            for i in 0..<len(buffer.line_starts) {
+                if cursor_ptr.pos < buffer.line_starts[i] {
+                    new_line = max(0, i - 1)
+                    break
+                }
+            }
+            if cursor_ptr.pos >= buffer.line_starts[len(buffer.line_starts) - 1] {
+                new_line = len(buffer.line_starts) - 1
+            }
+            cursor_ptr.line = new_line
+            cursor_ptr.pos = clamp(cursor_ptr.pos, 0, len(buffer.data))
+            if cursor_ptr.pos < buffer.line_starts[cursor_ptr.line] {
+                cursor_ptr.pos = buffer.line_starts[cursor_ptr.line]
+            }
+            cursor_ptr.col = cursor_ptr.pos - buffer.line_starts[cursor_ptr.line]
+        }
+
+        // Post-deletion cursor assertions.
+        assert(cursor_ptr.line >= 0 && cursor_ptr.line < len(buffer.line_starts), "Cursor line out of bounds")
+        assert(cursor_ptr.pos >= 0 && cursor_ptr.pos <= len(buffer.data), "Cursor position out of buffer bounds")
+        assert(cursor_ptr.pos >= buffer.line_starts[cursor_ptr.line], "Cursor position before line start")
+    }
+
+    update_cursor_lines_and_cols(buffer, cursors)
+    update_cursors_from_temp_slice(window, cursors)
 }
 
 // Works just like buffer_delete_line, but without cursor position adjustments
