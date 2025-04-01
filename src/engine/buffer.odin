@@ -853,37 +853,101 @@ buffer_delete_to_line_end :: proc(window: ^Window) {
 }
 
 buffer_delete_selection :: proc(window: ^Window) {
-	using window
-	assert(cursor.sel >= 0 && cursor.sel <= len(buffer.data), "cursor.sel out of bounds")
-	assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "cursor.pos out of bounds")
+    using window
 
-	if cursor.sel == cursor.pos do return // No selection, nothing to delete.
+    // Collect all cursors: main cursor and additional cursors
+    all_cursors: [dynamic]^Cursor
+    defer delete(all_cursors)
+    append(&all_cursors, &cursor)
+    for i in 0..<len(additional_cursors) {
+        append(&all_cursors, &additional_cursors[i])
+    }
 
-	start := min(cursor.sel, cursor.pos)
-	end := max(cursor.sel, cursor.pos) + 1 // Include the character at max position.
+    // Validate cursor positions
+    for c in all_cursors {
+        assert(c.sel >= 0 && c.sel <= len(buffer.data), "cursor.sel out of bounds")
+        assert(c.pos >= 0 && c.pos <= len(buffer.data), "cursor.pos out of bounds")
+    }
 
-	assert(start <= end, "Selection start must be <= end")
+    // Collect selection ranges from all cursors
+    ranges: [dynamic][2]int
+    defer delete(ranges)
+    for c in all_cursors {
+        if c.sel != c.pos {
+            start := min(c.sel, c.pos)
+            end := max(c.sel, c.pos) + 1 // Half-open range includes max position
+            append(&ranges, [2]int{start, end})
+        }
+    }
 
-	if end > start {
-		if end > len(buffer.data) do end = len(buffer.data)
-		assert(end <= len(buffer.data), "end clamped incorrectly")
+    // If no selections exist, exit early
+    if len(ranges) == 0 do return
 
-		old_len := len(buffer.data)
-		copy(buffer.data[start:], buffer.data[end:])
-		resize(&buffer.data, len(buffer.data) - (end - start))
-		assert(len(buffer.data) == old_len - (end - start), "Buffer resize failed")
+    // Merge overlapping or adjacent ranges
+    slice.sort_by(ranges[:], proc(a, b: [2]int) -> bool { return a[0] < b[0] })
+    merged: [dynamic][2]int
+    defer delete(merged)
+    append(&merged, ranges[0])
+    for i in 1..<len(ranges) {
+        current := ranges[i]
+        last := &merged[len(merged)-1]
+        if current[0] <= last[1] {
+            last[1] = max(last[1], current[1])
+        } else {
+            append(&merged, current)
+        }
+    }
 
-		cursor.pos = start
-		buffer_mark_dirty(buffer)
-		buffer_update_line_starts(window, start)
+    // Track the earliest deletion point for line starts update
+    earliest_start := merged[0][0]
 
-		assert(cursor.pos >= 0 && cursor.pos <= len(buffer.data), "Cursor position out of bounds")
-		assert(len(buffer.line_starts) > 0, "Line starts must not be empty")
-		assert(buffer.line_starts[0] == 0, "First line start must be 0")
-	}
+    // Delete merged ranges from end to start to preserve earlier indices
+    for i := len(merged)-1; i >= 0; i -= 1 {
+        r := merged[i]
+        start := r[0]
+        end := r[1]
+        assert(start <= end, "Selection start must be <= end")
+        if end > len(buffer.data) do end = len(buffer.data)
 
-	cursor.sel = cursor.pos
-	assert(cursor.sel == cursor.pos, "Selection not reset")
+        if end > start {
+            delete_count := end - start
+            old_len := len(buffer.data)
+            copy(buffer.data[start:], buffer.data[end:])
+            resize(&buffer.data, len(buffer.data) - delete_count)
+            assert(len(buffer.data) == old_len - delete_count, "Buffer resize failed")
+
+            // Adjust all cursor positions based on this deletion
+            for c in all_cursors {
+                if c.pos > end {
+                    c.pos -= delete_count
+                } else if c.pos >= start {
+                    c.pos = start
+                }
+            }
+        }
+    }
+
+    // Update buffer state
+    buffer_mark_dirty(buffer)
+    buffer_update_line_starts(window, earliest_start)
+
+    // Reset selections for all cursors
+    for c in all_cursors {
+        c.sel = c.pos
+        assert(c.sel == c.pos, "Selection not reset")
+    }
+
+    // Clamp cursor positions to buffer bounds
+    for c in all_cursors {
+        if c.pos > len(buffer.data) {
+            c.pos = len(buffer.data)
+        }
+        assert(c.pos >= 0 && c.pos <= len(buffer.data), "Cursor position out of bounds")
+    }
+
+    // Validate line starts
+    assert(len(buffer.line_starts) > 0, "Line starts must not be empty")
+    assert(buffer.line_starts[0] == 0, "First line start must be 0")
 }
 
 buffer_delete_visual_line_selection :: proc(window: ^Window) {
