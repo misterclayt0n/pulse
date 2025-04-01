@@ -231,6 +231,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.ESCAPE) {
 			p.current_window.mode = .NORMAL
 			p.current_window.cursor.sel = 0 // Reset selection.
+			for &c in p.current_window.additional_cursors do c.sel = 0 // Reset additional cursor selections.
 	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
 		}
 
@@ -300,6 +301,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.ESCAPE) {
 			p.current_window.mode = .NORMAL
 			p.current_window.cursor.sel = 0 // Reset selection.
+			for &c in p.current_window.additional_cursors do c.sel = 0 // Reset additional cursor selections.
 	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
 		}
 
@@ -530,6 +532,11 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		mode = .VISUAL
 		// Only set sel = pos if sel hasn't been set (e.g. entering via 'v')
 		if cursor.sel == 0 do cursor.sel = cursor.pos
+
+		for &c in additional_cursors {
+			if c.sel == 0 do c.sel = c.pos
+		}
+		
 	case .VISUAL_LINE:
 		current_line := cursor.line
 		line_start := buffer.line_starts[current_line]
@@ -540,6 +547,17 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 
 		cursor.sel = line_start
 		cursor.pos = line_end
+
+		for &c in additional_cursors {
+	        c_line := c.line
+	        c_line_start := buffer.line_starts[c_line]
+	        c_line_end := len(buffer.data)
+	        if c_line < len(buffer.line_starts) - 1 {
+	            c_line_end = buffer.line_starts[c_line + 1] - 1
+	        }
+	        c.sel = c_line_start
+	        c.pos = c_line_end
+	    }
 
 		mode = .VISUAL_LINE
 	}
