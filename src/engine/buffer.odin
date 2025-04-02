@@ -1057,6 +1057,89 @@ buffer_delete_visual_line_selection :: proc(window: ^Window) {
     }
 }
 
+buffer_delete_visual_block_selection :: proc(window: ^Window) {
+	using window
+	assert(mode == .VISUAL_BLOCK)
+	if visual_block_anchor_line == -1 do return
+	
+	// Determine block boundaries.
+    start_line := min(visual_block_anchor_line, cursor.line)
+    end_line := max(visual_block_anchor_line, cursor.line)
+    start_col := min(visual_block_anchor_col, cursor.col)
+    end_col := max(visual_block_anchor_col, cursor.col)
+
+    // Collect all cursors.
+    all_cursors: [dynamic]^Cursor
+    defer delete(all_cursors)
+    append(&all_cursors, &cursor)
+    for &c in additional_cursors {
+        append(&all_cursors, &c)
+    }
+
+    // Collect deletion ranges.
+    deletion_ranges: [dynamic][2]int
+    defer delete(deletion_ranges)
+    
+    for line in start_line..=end_line {
+        line_start := buffer.line_starts[line]
+        line_end := len(buffer.data)
+        if line + 1 < len(buffer.line_starts) {
+            line_end = buffer.line_starts[line + 1]
+        }
+        
+        start_pos := buffer_get_pos_from_col(buffer, line, start_col)
+        end_pos := buffer_get_pos_from_col(buffer, line, end_col + 1)
+        
+        if start_pos > line_end do start_pos = line_end
+        if end_pos > line_end do end_pos = line_end
+        
+        if start_pos < end_pos {
+            append(&deletion_ranges, [2]int{start_pos, end_pos})
+        }
+    }
+    
+    // Sort and delete in reverse order.
+    slice.sort_by(deletion_ranges[:], proc(a, b: [2]int) -> bool { return a[0] > b[0] })
+    
+    for r in deletion_ranges {
+        start := r[0]
+        end := r[1]
+        delete_count := end - start
+        if delete_count <= 0 do continue
+        
+        copy(buffer.data[start:], buffer.data[end:])
+        resize(&buffer.data, len(buffer.data) - delete_count)
+        
+        for c in all_cursors {
+            if c.pos > end {
+                c.pos -= delete_count
+            } else if c.pos >= start {
+                c.pos = start
+            }
+            c.sel = c.pos
+        }
+    }
+    
+    // Update buffer and cursors.
+    if len(deletion_ranges) > 0 {
+        earliest_start := deletion_ranges[len(deletion_ranges) - 1][0]
+        buffer_mark_dirty(buffer)
+        buffer_update_line_starts(window, earliest_start)
+    }
+    
+    for c in all_cursors {
+        if c.pos > len(buffer.data) {
+            c.pos = len(buffer.data)
+        }
+        if c.pos < 0 {
+            c.pos = 0
+        }
+    }
+    
+    update_cursor_lines_and_cols(buffer, all_cursors[:])
+    update_cursors_from_temp_slice(window, all_cursors[:])
+}
+
 buffer_delete_range :: proc(window: ^Window, start, end: int) {
 	assert(
 		start >= 0 && start <= end && end <= len(window.buffer.data),
@@ -1282,12 +1365,12 @@ buffer_draw_visible_lines :: proc(
     assert(ctx.last_line >= ctx.first_line, "Last line must be >= first line")
     assert(ctx.last_line < len(buffer.line_starts), "Last line must be within buffer bounds")
 
-    // Collect all selection ranges for .VISUAL mode
+    // Collect all selection ranges for .VISUAL mode.
     selection_ranges := get_selection_ranges(window, allocator)
     defer delete(selection_ranges)
     selection_active := mode == .VISUAL && len(selection_ranges) > 0
 
-    // Collect merged line ranges for .VISUAL_LINE mode
+    // Collect merged line ranges for .VISUAL_LINE mode.
     visual_line_ranges: [dynamic][2]int
     if mode == .VISUAL_LINE {
         raw_ranges := get_visual_line_ranges(window, allocator)
@@ -1296,7 +1379,7 @@ buffer_draw_visible_lines :: proc(
         defer delete(visual_line_ranges)
     }
 
-    // Iterate over visible lines
+    // Iterate over visible lines.
     for line in ctx.first_line ..= ctx.last_line {
         line_start := buffer.line_starts[line]
         line_end := len(buffer.data)
@@ -1316,7 +1399,73 @@ buffer_draw_visible_lines :: proc(
         defer delete(line_str, allocator)
         line_width := rl.MeasureTextEx(font.ray_font, line_str, f32(font.size), font.spacing).x
 
-        // Highlight selections
+        line_content_end_byte := line_end
+        if line_end > line_start {
+             // Check for LF or CR at the end.
+             last_byte := buffer.data[line_end - 1]
+             if last_byte == '\n' {
+                 line_content_end_byte -= 1
+                 if line_content_end_byte > line_start && buffer.data[line_content_end_byte - 1] == '\r' {
+                     line_content_end_byte -= 1 // Handle CRLF.
+                 }
+             } else if last_byte == '\r' { // Should ideally not happen alone often.
+                 line_content_end_byte -= 1
+             }
+        }
+        
+        line_byte_length := line_content_end_byte - line_start
+        
+        if mode == .VISUAL_BLOCK && visual_block_anchor_line != -1 {
+            // Determine block boundaries.
+            start_line := min(visual_block_anchor_line, cursor.line)
+            end_line   := max(visual_block_anchor_line, cursor.line)
+            
+            // Use preferred_col for current position, anchor_col for anchor.
+            current_col := cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
+            start_c := min(visual_block_anchor_col, current_col)
+            end_c   := max(visual_block_anchor_col, current_col)
+
+            // Check if the current drawing line is within the block's line range.
+            if line >= start_line && line <= end_line {
+                x_draw_start := ctx.position.x
+                y_draw_pos := ctx.position.y + f32(line - ctx.first_line) * f32(ctx.line_height)
+
+                sel_start_pos := buffer_get_pos_from_col(buffer, line, start_c)
+                sel_end_pos := buffer_get_pos_from_col(buffer, line, end_c) // Include end column.
+                if sel_start_pos > line_content_end_byte do sel_start_pos = line_content_end_byte
+                if sel_end_pos > line_content_end_byte do sel_end_pos = line_content_end_byte
+
+                // Measure text before selection.
+                x_offset: f32 = 0
+                if sel_start_pos > line_start {
+                    before_text := buffer.data[line_start:sel_start_pos]
+                    before_str := strings.clone_to_cstring(string(before_text), allocator) 
+                    defer delete(before_str, allocator)
+                    x_offset = rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
+                }
+
+                // Measure selected text width.
+                sel_width: f32 = 0
+                if sel_end_pos > sel_start_pos {
+                    selected_text := buffer.data[sel_start_pos:sel_end_pos]
+                    selected_str := strings.clone_to_cstring(string(selected_text), allocator)
+                    defer delete(selected_str, allocator)
+                    sel_width = rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
+                } else {
+                    // Handle zero-width or single-column block - draw a minimal width block maybe?.
+                     sel_width = rl.MeasureTextEx(font.ray_font, " ", f32(font.size), font.spacing).x / 2 // Estimate width or use font.char_width if available.
+                }
+
+                // Draw highlight rectangle.
+                rl.DrawRectangleV(
+                    {x_draw_start + x_offset, y_draw_pos},
+                    {sel_width, f32(font.size)},
+                    HIGHLIGHT_COLOR, // Ensure HIGHLIGHT_COLOR is defined.
+                )
+            }
+            }
+
+        // Highlight selections.
         if selection_active {
             x_start := ctx.position.x
             y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
@@ -1327,7 +1476,7 @@ buffer_draw_visible_lines :: proc(
                     start_pos := max(sel_start, line_start)
                     end_pos := min(sel_end, line_end)
 
-                    // Measure text before selection
+                    // Measure text before selection.
                     text_before := buffer.data[line_start:start_pos]
                     before_str := strings.clone_to_cstring(string(text_before), allocator)
                     defer delete(before_str, allocator)
@@ -1339,12 +1488,12 @@ buffer_draw_visible_lines :: proc(
                     defer delete(selected_str, allocator)
                     sel_width := rl.MeasureTextEx(font.ray_font, selected_str, f32(font.size), font.spacing).x
 
-                    // Handle empty selection within the line
+                    // Handle empty selection within the line.
                     if start_pos == end_pos {
-                        sel_width = font.char_width // Minimum width for visibility
+                        sel_width = font.char_width // Minimum width for visibility.
                     }
 
-                    // Draw highlight
+                    // Draw highlight.
                     rl.DrawRectangleV(
                         {x_start + x_offset, y_pos},
                         {sel_width, f32(font.size)},
@@ -1366,12 +1515,12 @@ buffer_draw_visible_lines :: proc(
                         {sel_width, f32(font.size)},
                         HIGHLIGHT_COLOR,
                     )
-                    break // Move to next line after highlighting
+                    break // Move to next line after highlighting.
                 }
             }
         }
 
-        // Draw the line text
+        // Draw the line text.
         y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
         rl.DrawTextEx(
             font.ray_font,
@@ -1849,4 +1998,53 @@ merge_line_ranges :: proc(ranges: [dynamic][2]int, allocator := context.allocato
     }
     append(&merged, current)
     return merged
+}
+
+// Returns byte length of the line *excluding* trailing newline characters
+// (This replaces the inline calculation which was less robust)
+buffer_line_content_length :: proc(buffer: ^Buffer, line_idx: int) -> int {
+    if line_idx < 0 || line_idx >= len(buffer.line_starts) {
+        return 0
+    }
+    line_start_byte := buffer.line_starts[line_idx]
+    line_end_byte := len(buffer.data)
+    if line_idx < len(buffer.line_starts) - 1 {
+        line_end_byte = buffer.line_starts[line_idx + 1]
+    }
+
+    line_content_end_byte := line_end_byte
+     if line_end_byte > line_start_byte {
+         last_byte := buffer.data[line_end_byte - 1]
+         if last_byte == '\n' {
+             line_content_end_byte -= 1
+             if line_content_end_byte > line_start_byte && buffer.data[line_content_end_byte - 1] == '\r' {
+                 line_content_end_byte -= 1 // Handle CRLF
+             }
+         } else if last_byte == '\r' { 
+             line_content_end_byte -= 1
+         }
+     }
+     
+     length := line_content_end_byte - line_start_byte
+     return length if length >= 0 else 0
+}
+
+buffer_get_pos_from_col :: proc(buffer: ^Buffer, line, col: int) -> int {
+	if line < 0 || line >= len(buffer.line_starts) do return buffer.line_starts[line]
+	line_start := buffer.line_starts[line]
+	line_end := len(buffer.data)
+	if line + 1 < len(buffer.line_starts) {
+		line_end = buffer.line_starts[line + 1]
+	}
+
+	pos := line_start
+	current_col := 0
+	for pos < line_end && current_col < col {
+		r, n := utf8.decode_rune(buffer.data[pos:])
+		if n == 0 || r == '\r' do break
+		pos += n
+		current_col += 1
+	}
+	
+	return pos
 }

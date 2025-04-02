@@ -70,6 +70,7 @@ Also not so sure about this, but generally speaking:
 - [ ] Zooming fonts.
 - [x] Line numbers.
 - [x] Some cool lerp scrolling effect (something like the RAD debugger, 4coder, file pilot).
+- [x] Something to mark how much time I've been coding.
 
 ### Configuration
 I want some things to be configurable and be saved at `.config/pulse`, and the only reason for that is because I like tweaking my editor quite a lot.

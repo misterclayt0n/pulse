@@ -6,18 +6,20 @@ import "core:unicode/utf8"
 import rl "vendor:raylib"
 
 Window :: struct {
-	buffer:             ^Buffer,
-	cursor:             Cursor,
-	additional_cursors: [dynamic]Cursor,
-	rect:               rl.Rectangle,
-	scroll:             rl.Vector2,
-	is_focus:           bool,
-	target_x:           f32,
-	target_y:           f32,
-	text_offset:        f32, // Determines where text rendering starts.
-	mode:               Vim_Mode,
-	use_tabs:           bool, // This is like a big todo, and I can see myself only using spaces.
-	tab_width:          int,
+	buffer:                   ^Buffer,
+	cursor:                   Cursor,
+	additional_cursors:       [dynamic]Cursor,
+	rect:                     rl.Rectangle,
+	scroll:                   rl.Vector2,
+	is_focus:                 bool,
+	target_x:                 f32,
+	target_y:                 f32,
+	text_offset:              f32, // Determines where text rendering starts.
+	mode:                     Vim_Mode,
+	use_tabs:                 bool, // This is like a big todo, and I can see myself only using spaces.
+	tab_width:                int,
+	visual_block_anchor_line: int,
+	visual_block_anchor_col:  int,
 }
 
 Split_Type :: enum {
@@ -64,6 +66,8 @@ window_init :: proc(
 		mode = .NORMAL,
 		use_tabs = false, // Default to space
 		tab_width = INDENT_SIZE,
+		visual_block_anchor_line = -1,
+		visual_block_anchor_col = -1,
 	}
 
 	return new_window

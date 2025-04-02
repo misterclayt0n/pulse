@@ -38,6 +38,12 @@ Cursor_Movement :: enum {
 	BIG_WORD_LEFT,
 	// TODO: A lot more
 }
+ 
+Cursor_Placement :: enum {
+	START, // Place cursor at the start column (for I, C, D, X).
+    END,   // Place cursor *after* the end column (for A).
+    START_AFTER_DELETE, // Special case for C maybe? TODO.
+}
 
 cursor_draw :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 	using window
@@ -382,7 +388,7 @@ add_cursor :: proc(window: ^Window, line, col: int) {
 	if line < len(buffer.line_starts) - 1 {
 		end = buffer.line_starts[line + 1] - 1 // Exclude newline.
 	}
-	pos := start + col
+	pos := buffer_get_pos_from_col(buffer, line, col)
 	if pos > end do pos = end // Clamp the fucker.
 	new_cursor := Cursor {
         pos           = pos,
@@ -450,6 +456,63 @@ update_cursor_lines_and_cols :: proc(buffer: ^Buffer, cursors: []^Cursor) {
         cursor_ptr.col = cursor_ptr.pos - buffer.line_starts[cursor_ptr.line]
         assert(cursor_ptr.col >= 0, "Cursor column must be non-negative")
     }
+}
+
+create_block_cursors :: proc(p: ^Pulse, placement: Cursor_Placement) -> bool {
+    using p.current_window
+
+    if visual_block_anchor_line == -1 {
+        status_line_log(&p.status_line, "Attempted to create block cursors outside of visual block mode")
+        return false
+    }
+
+    // Determine block boundaries.
+    start_line := min(visual_block_anchor_line, cursor.line)
+    end_line   := max(visual_block_anchor_line, cursor.line)
+    
+    current_col := cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
+    start_c := min(visual_block_anchor_col, current_col)
+    end_c   := max(visual_block_anchor_col, current_col)
+
+    target_col: int
+    #partial switch placement {
+    case .START:
+        target_col = start_c
+    case .END:
+         // Vim 'A' places cursor *after* the block selection on each line.
+        target_col = end_c + 1 // Place *after* the end column.
+    case .START_AFTER_DELETE:
+        // If deletion happened, columns might have shifted.
+        // Simplest is still using start_c, user adjusts if needed.
+        target_col = start_c 
+    }
+    
+    clear(&additional_cursors)
+
+    for line_idx in start_line ..= end_line {
+        if line_idx == cursor.line do continue
+        if line_idx >= len(buffer.line_starts) do continue 
+        line_start_byte := buffer.line_starts[line_idx]
+        line_len := buffer_line_content_length(buffer, line_idx) 
+        new_pos := buffer_get_pos_from_col(buffer, line_idx, target_col)
+
+        new_cursor := Cursor {
+            pos           = new_pos,
+            sel           = new_pos, // No selection
+            line          = line_idx,
+            col           = new_pos, 
+            preferred_col = new_pos, 
+            style         = cursor.style, 
+            color         = {CURSOR_COLOR.r, CURSOR_COLOR.g, CURSOR_COLOR.b, 180}, // NOTE: Slightly different color?
+            blink         = cursor.blink,
+        }
+        append(&additional_cursors, new_cursor)
+    }
+    
+    cursor.col = cursor.pos - buffer.line_starts[cursor.line]
+    cursor.preferred_col = cursor.col 
+
+    return true
 }
 
 //
