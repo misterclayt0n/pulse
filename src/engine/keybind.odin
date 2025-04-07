@@ -60,6 +60,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	case .NORMAL:
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
+		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
 		// Default movements between all modes.
 		// Only execute "normal" commands if command buffer is empty.
@@ -151,6 +152,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.D) {
 				if shift_pressed do buffer_delete_to_line_end(p.current_window)
+				else if alt_pressed do add_multi_cursor_word(p, allocator) 
 			}
 
 			if press_and_repeat(.C) {
@@ -192,12 +194,8 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 
 		// ESC clears the command buffer.
-		if press_and_repeat(.ESCAPE) {
-			p.current_window.cursor.color = CURSOR_COLOR
-			clear(&p.keymap.vim_state.normal_cmd_buffer)
-			clear(&p.current_window.additional_cursors)
-		}
-
+		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
+		
 		//
 		// Command buffer evaluation.
 		//
@@ -229,14 +227,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 	case .VISUAL:
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
 
 		// Exit to Normal Mode.
-		if press_and_repeat(.ESCAPE) {
-			p.current_window.mode = .NORMAL
-			p.current_window.cursor.sel = 0 // Reset selection.
-			for &c in p.current_window.additional_cursors do c.sel = 0 // Reset additional cursor selections.
-	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
-		}
+		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
 
 		// Only execute "normal" commands if command buffer is empty.
 		if len(p.keymap.vim_state.normal_cmd_buffer) == 0 {
@@ -256,7 +250,11 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 
 		// Selection operations.
-		if press_and_repeat(.D) || press_and_repeat(.X) do delete_visual(p, .NORMAL)
+		if press_and_repeat(.D) {
+			if alt_pressed do add_multi_cursor_word(p, allocator)
+			else do delete_visual(p, .NORMAL)
+		}
+		if press_and_repeat(.X) do delete_visual(p, .NORMAL)
 
 		if press_and_repeat(.C) do delete_visual(p, .INSERT)
 
@@ -291,12 +289,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
 
 		// Exit to Normal Mode.
-		if press_and_repeat(.ESCAPE) {
-			p.current_window.mode = .NORMAL
-			p.current_window.cursor.sel = 0 // Reset selection.
-			for &c in p.current_window.additional_cursors do c.sel = 0 // Reset additional cursor selections.
-	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
-		}
+		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
 
 		// Movement here is similar to VISUAL but line-wise.
 		if press_and_repeat(.UP) || press_and_repeat(.K) {
@@ -532,7 +525,24 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			move_cursors(p.current_window, .LEFT)
 		}
 
-		if mode == .COMMAND || mode == .VISUAL || mode == .VISUAL_LINE || mode == .VISUAL_BLOCK {
+		if mode == .NORMAL {
+			// Clear normal mode state.
+			p.current_window.cursor.color = CURSOR_COLOR
+			clear(&p.keymap.vim_state.normal_cmd_buffer)
+			clear(&p.current_window.additional_cursors)
+		    p.current_window.multi_cursor_word = ""
+		    p.current_window.multi_cursor_active = false
+		}
+
+		if mode == .VISUAL || mode == .VISUAL_LINE {
+			// Clear visual mode state.
+			p.current_window.mode = .NORMAL
+			p.current_window.cursor.sel = 0 // Reset selection.
+			for &c in p.current_window.additional_cursors do c.sel = 0 // Reset additional cursor selections.
+	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
+		}
+
+		if mode == .COMMAND || mode == .VISUAL_BLOCK {
 			mode = .NORMAL
 		}
 	case .INSERT:
@@ -699,3 +709,4 @@ delete_visual :: proc(p: ^Pulse, mode: Vim_Mode) {
 	clear(&p.keymap.vim_state.normal_cmd_buffer)
 	for rl.GetCharPressed() != 0 {} 
 }
+

@@ -20,6 +20,8 @@ Window :: struct {
 	tab_width:                int,
 	visual_block_anchor_line: int,
 	visual_block_anchor_col:  int,
+	multi_cursor_word:        string,
+	multi_cursor_active:      bool,
 }
 
 Split_Type :: enum {
@@ -68,6 +70,8 @@ window_init :: proc(
 		tab_width = INDENT_SIZE,
 		visual_block_anchor_line = -1,
 		visual_block_anchor_col = -1,
+		multi_cursor_word = "",
+		multi_cursor_active = false,
 	}
 
 	return new_window

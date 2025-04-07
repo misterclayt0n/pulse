@@ -2,6 +2,8 @@ package engine
 
 import rl "vendor:raylib"
 import "core:slice"
+import "core:strings"
+import "core:unicode/utf8"
 
 Cursor :: struct {
 	pos:           int, // Position in the array of bytes.
@@ -38,7 +40,7 @@ Cursor_Movement :: enum {
 	BIG_WORD_LEFT,
 	// TODO: A lot more
 }
- 
+
 Cursor_Placement :: enum {
 	START, // Place cursor at the start column (for I, C, D, X).
     END,   // Place cursor *after* the end column (for A).
@@ -156,10 +158,10 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
     horizontal: bool
 
     #partial switch movement {
-    
-	// 
+
+	//
 	// Horizontal movement
-	// 
+	//
 
     case .LEFT:
         if cursor.pos > current_line_start {
@@ -184,11 +186,11 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
 			}
 		}
 		horizontal = true
-		
+
 	case .LINE_START:
 		cursor.pos = buffer.line_starts[cursor.line]
 		horizontal = true
-		
+
 	case .FIRST_NON_BLANK:
 		current_line_start := buffer.line_starts[cursor.line]
 		current_line_end := len(buffer.data)
@@ -227,9 +229,9 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
 			// Last line is empty.
 			else do cursor.pos = current_line_start
 		}
-		
+
 		horizontal = true
-		
+
 	case .WORD_LEFT:
 		new_pos, found := buffer_find_previous_word_start(buffer, cursor.pos, .WORD)
 		if found {
@@ -285,11 +287,11 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
 			cursor.pos = 0 // Move to start if no previous word.
 		}
 		horizontal = true
-		
-	// 
+
+	//
 	// Vertical movement
-	// 
-		
+	//
+
 	case .UP:
 		if cursor.line > 0 {
 			// Get target col (preserved from the current position).
@@ -331,7 +333,7 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
 			new_line_length := buffer_line_length(buffer, new_line)
 			new_col := min(target_col, new_line_length)
 
-			// If we're at the last character, do not allow positioning after it unless 
+			// If we're at the last character, do not allow positioning after it unless
 			// target_col is 0 (allowing positioning at start of empty lines).
 			new_line_end := len(buffer.data)
 			if new_line < len(buffer.line_starts) - 1 {
@@ -350,12 +352,12 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
 
 			cursor.pos = new_pos
 		}
-		
+
 	case .FILE_BEGINNING:
 		cursor.line = 0
 		cursor.pos = buffer.line_starts[0]
 		cursor.col = 0
-		
+
 	case .FILE_END:
 		last_line := len(buffer.line_starts) - 1
 		cursor.line = last_line
@@ -372,36 +374,73 @@ cursor_move :: proc(cursor: ^Cursor, buffer: ^Buffer, movement: Cursor_Movement)
             break
         }
     }
-    
+
     cursor.col = cursor.pos - buffer.line_starts[cursor.line]
-    
+
     if horizontal {
         cursor.preferred_col = cursor.col
     }
 }
 
-add_cursor :: proc(window: ^Window, line, col: int) {
-	using window
-	assert(line <= 0 || line >= len(buffer.line_starts), "Invalid line to add a cursor")
-	start := buffer.line_starts[line]
-	end := len(buffer.data)
-	if line < len(buffer.line_starts) - 1 {
-		end = buffer.line_starts[line + 1] - 1 // Exclude newline.
-	}
-	pos := buffer_get_pos_from_col(buffer, line, col)
-	if pos > end do pos = end // Clamp the fucker.
-	new_cursor := Cursor {
+// Adds a cursor at a specific position if not already present
+add_cursor_at_pos :: proc(window: ^Window, pos: int, allocator := context.allocator) -> bool {
+	// Check main cursor and additional cursors.
+    if window.cursor.pos == pos do return false
+    for &c in window.additional_cursors {
+        if c.pos == pos do return false
+    }
+
+    line := get_line_from_pos(window.buffer, pos)
+    col := pos - window.buffer.line_starts[line]
+    new_cursor := Cursor {
         pos           = pos,
         sel           = pos, // No selection initially.
         line          = line,
         col           = col,
         preferred_col = col,
         style         = .BLOCK,
-        color         = CURSOR_COLOR, // Could use a different color to distinguish.
+        color         = {CURSOR_COLOR.r, CURSOR_COLOR.g, CURSOR_COLOR.b, 180}, // NOTE: Slightly transparent.
         blink         = false,
-	}
+    }
+    append(&window.additional_cursors, new_cursor)
+    return true
+}
 
-	append(&additional_cursors, new_cursor)
+// Handles Alt+D logic for multi-cursor word selection.
+add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
+    window := p.current_window
+
+    if !window.multi_cursor_active {
+        change_mode(p, .VISUAL) // Enter visual mode for selection.
+        // First press: select the word under the cursor.
+        start, end, word, success := select_word_under_cursor(window, allocator)
+        if !success {
+            return
+        }
+        window.multi_cursor_word = word
+        window.multi_cursor_active = true
+    } else {
+        // Subsequent presses: find next occurrence.
+        last_pos := window.cursor.pos
+        for &c in window.additional_cursors {
+            last_pos = max(last_pos, c.pos)
+        }
+        next_pos, found := find_next_word_occurrence(window.buffer, window.multi_cursor_word, last_pos + 1)
+        if found {
+            // Add cursor at the start of the next occurrence.
+            if add_cursor_at_pos(window, next_pos, allocator) {
+                // Set selection for the new cursor.
+                last_cursor := &window.additional_cursors[len(window.additional_cursors) - 1]
+                last_cursor.sel = next_pos
+                last_cursor.pos = next_pos + len(window.multi_cursor_word) - 1
+                last_cursor.line = get_line_from_pos(window.buffer, last_cursor.pos)
+                last_cursor.col = last_cursor.pos - window.buffer.line_starts[last_cursor.line]
+            }
+        } else {
+            // No more occurrences; could wrap around or stop.
+            status_line_log(&p.status_line, "No more occurrences of '%s'", window.multi_cursor_word)
+        }
+    }
 }
 
 // Move all cursors.
@@ -469,7 +508,7 @@ create_block_cursors :: proc(p: ^Pulse, placement: Cursor_Placement) -> bool {
     // Determine block boundaries.
     start_line := min(visual_block_anchor_line, cursor.line)
     end_line   := max(visual_block_anchor_line, cursor.line)
-    
+
     current_col := cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
     start_c := min(visual_block_anchor_col, current_col)
     end_c   := max(visual_block_anchor_col, current_col)
@@ -484,35 +523,70 @@ create_block_cursors :: proc(p: ^Pulse, placement: Cursor_Placement) -> bool {
     case .START_AFTER_DELETE:
         // If deletion happened, columns might have shifted.
         // Simplest is still using start_c, user adjusts if needed.
-        target_col = start_c 
+        target_col = start_c
     }
-    
+
     clear(&additional_cursors)
 
     for line_idx in start_line ..= end_line {
         if line_idx == cursor.line do continue
-        if line_idx >= len(buffer.line_starts) do continue 
+        if line_idx >= len(buffer.line_starts) do continue
         line_start_byte := buffer.line_starts[line_idx]
-        line_len := buffer_line_content_length(buffer, line_idx) 
+        line_len := buffer_line_content_length(buffer, line_idx)
         new_pos := buffer_get_pos_from_col(buffer, line_idx, target_col)
 
         new_cursor := Cursor {
             pos           = new_pos,
             sel           = new_pos, // No selection
             line          = line_idx,
-            col           = new_pos, 
-            preferred_col = new_pos, 
-            style         = cursor.style, 
+            col           = new_pos,
+            preferred_col = new_pos,
+            style         = cursor.style,
             color         = {CURSOR_COLOR.r, CURSOR_COLOR.g, CURSOR_COLOR.b, 180}, // NOTE: Slightly different color?
             blink         = cursor.blink,
         }
         append(&additional_cursors, new_cursor)
     }
-    
+
     cursor.col = cursor.pos - buffer.line_starts[cursor.line]
-    cursor.preferred_col = cursor.col 
+    cursor.preferred_col = cursor.col
 
     return true
+}
+
+// Selects the word under the cursor and returns its boundaries and text.
+select_word_under_cursor :: proc(window: ^Window, allocator := context.allocator) -> (start, end: int, word: string, success: bool) {
+	start, end = find_word_boundaries(window.buffer, window.cursor.pos)
+	if start >= end do return 0, 0, "", false
+
+	word_bytes := window.buffer.data[start:end]
+	word = strings.clone_from_bytes(word_bytes, allocator)
+	window.cursor.sel = start
+    window.cursor.pos = prev_rune_start(window.buffer.data[:], end) // Position at last char of word.
+    window.cursor.line = get_line_from_pos(window.buffer, window.cursor.pos)
+    window.cursor.col = window.cursor.pos - window.buffer.line_starts[window.cursor.line]
+    return start, end, word, true
+}
+
+
+// Finds the next occurrence of a word after a given position
+find_next_word_occurrence :: proc(buffer: ^Buffer, word: string, start_pos: int) -> (pos: int, found: bool) {
+    search_pos := start_pos
+    word_bytes := transmute([]u8)word
+    word_len := len(word_bytes)
+
+    for search_pos + word_len <= len(buffer.data) {
+        if slice.equal(buffer.data[search_pos:search_pos + word_len], word_bytes) {
+            // Ensure it's a word boundary (not part of a larger word)
+            before_ok := search_pos == 0 || !is_word_character(utf8.rune_at(string(buffer.data[:]), search_pos - 1))
+            after_ok := search_pos + word_len == len(buffer.data) || !is_word_character(utf8.rune_at(string(buffer.data[:]), search_pos + word_len))
+            if before_ok && after_ok {
+                return search_pos, true
+            }
+        }
+        search_pos += 1 // Byte-by-byte search; could optimize with a string search algo later.
+    }
+    return -1, false
 }
 
 //
@@ -528,4 +602,3 @@ get_all_cursors :: proc(window: ^Window, allocator := context.allocator) -> []Cu
 
 	return cursors
 }
-

@@ -1,6 +1,7 @@
 package engine
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 import "core:math/big"
 import rl "vendor:raylib"
@@ -200,9 +201,6 @@ execute_command :: proc(p: ^Pulse) {
 	case "close":
 		status_line_log(&p.status_line, "Split closed")
 		window_close_current(p)
-	case "cursor":
-		status_line_log(&p.status_line, "Cursor added")
-		add_cursor(p.current_window, 0, 0) // Mocked for now.
 	case:
 		status_line_log(&p.status_line, "Unknown command: %s", cmd)
 	}
