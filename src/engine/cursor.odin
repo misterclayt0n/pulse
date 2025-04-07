@@ -411,14 +411,44 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
     window := p.current_window
 
     if !window.multi_cursor_active {
-        change_mode(p, .VISUAL) // Enter visual mode for selection.
-        // First press: select the word under the cursor.
-        start, end, word, success := select_word_under_cursor(window, allocator)
-        if !success {
+    	// First press: determine what to select based on mode.
+        start, end: int
+        pattern: string
+        success: bool
+
+        if window.mode == .NORMAL {
+        	change_mode(p, .VISUAL)
+            start, end, pattern, success = select_word_under_cursor(window, allocator)
+            if !success {
+                status_line_log(&p.status_line, "No word under cursor")
+                return
+            }
+        } else if window.mode == .VISUAL {
+            // In VISUAL mode, use the current selection.
+            start = min(window.cursor.sel, window.cursor.pos)
+            end = max(window.cursor.sel, window.cursor.pos + 1)
+            if start >= end {
+                status_line_log(&p.status_line, "No valid selection")
+                return
+            }
+            pattern_bytes := window.buffer.data[start:end]
+            pattern = strings.clone_from_bytes(pattern_bytes, allocator)
+            
+            // Keep the current selection active.
+            window.cursor.sel = start
+            window.cursor.pos = end - 1 // Position at end of selection (last char).
+            window.cursor.line = get_line_from_pos(window.buffer, window.cursor.pos)
+            window.cursor.col = window.cursor.pos - window.buffer.line_starts[window.cursor.line]
+            success = true
+        } else {
+            status_line_log(&p.status_line, "Multi-cursor not supported in this mode")
             return
         }
-        window.multi_cursor_word = word
-        window.multi_cursor_active = true
+
+        if success {
+            window.multi_cursor_word = pattern
+            window.multi_cursor_active = true
+        }
     } else {
         // Subsequent presses: find next occurrence.
         last_pos := window.cursor.pos
@@ -571,20 +601,15 @@ select_word_under_cursor :: proc(window: ^Window, allocator := context.allocator
 
 // Finds the next occurrence of a word after a given position
 find_next_word_occurrence :: proc(buffer: ^Buffer, word: string, start_pos: int) -> (pos: int, found: bool) {
-    search_pos := start_pos
-    word_bytes := transmute([]u8)word
-    word_len := len(word_bytes)
+	search_pos := start_pos
+    pattern_bytes := transmute([]u8)word
+    pattern_len := len(pattern_bytes)
 
-    for search_pos + word_len <= len(buffer.data) {
-        if slice.equal(buffer.data[search_pos:search_pos + word_len], word_bytes) {
-            // Ensure it's a word boundary (not part of a larger word)
-            before_ok := search_pos == 0 || !is_word_character(utf8.rune_at(string(buffer.data[:]), search_pos - 1))
-            after_ok := search_pos + word_len == len(buffer.data) || !is_word_character(utf8.rune_at(string(buffer.data[:]), search_pos + word_len))
-            if before_ok && after_ok {
-                return search_pos, true
-            }
+    for search_pos + pattern_len <= len(buffer.data) {
+        if slice.equal(buffer.data[search_pos:search_pos + pattern_len], pattern_bytes) {
+            return search_pos, true
         }
-        search_pos += 1 // Byte-by-byte search; could optimize with a string search algo later.
+        search_pos += 1 // Byte-by-byte search; optimize with Boyer-Moore or similar if needed
     }
     return -1, false
 }
