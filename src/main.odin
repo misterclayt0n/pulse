@@ -19,7 +19,7 @@ main :: proc() {
 
 	rl.SetConfigFlags({.WINDOW_RESIZABLE})
 	rl.InitWindow(1080, 970, "Pulse")
-	// rl.SetWindowMonitor(0)
+	rl.SetWindowMonitor(1)
 
 	// NOTE: Destroy the arena first.
 	defer vmem.arena_destroy(&arena)
