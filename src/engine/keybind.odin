@@ -356,15 +356,18 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
         if press_and_repeat(.I) {
             ok := create_block_cursors(p, .START)
-            if ok {
-                change_mode(p, .INSERT)
-            }
+            if ok do change_mode(p, .INSERT)
         }
         
         if press_and_repeat(.A) {
             ok := create_block_cursors(p, .END)
             if ok {
+            	using p.current_window
                 change_mode(p, .INSERT)
+	            // Move right after going to insert mode (main cursor)
+                cursor.pos = buffer_get_pos_from_col(buffer, cursor.line, visual_block_anchor_col + 1)
+                cursor.col = cursor.pos - buffer.line_starts[cursor.line]
+                cursor.preferred_col = cursor.col
             }
         }
 
