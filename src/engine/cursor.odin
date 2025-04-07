@@ -415,28 +415,29 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
         start, end: int
         pattern: string
         success: bool
+        original_mode := window.mode 
 
-        if window.mode == .NORMAL {
+        if original_mode == .NORMAL {
         	change_mode(p, .VISUAL)
             start, end, pattern, success = select_word_under_cursor(window, allocator)
             if !success {
                 status_line_log(&p.status_line, "No word under cursor")
                 return
             }
-        } else if window.mode == .VISUAL {
+        } else if original_mode == .VISUAL {
             // In VISUAL mode, use the current selection.
             start = min(window.cursor.sel, window.cursor.pos)
-            end = max(window.cursor.sel, window.cursor.pos + 1)
-            if start >= end {
+            end = max(window.cursor.sel , window.cursor.pos) // End is the last character.
+            if start == end {
                 status_line_log(&p.status_line, "No valid selection")
                 return
             }
-            pattern_bytes := window.buffer.data[start:end]
+            pattern_bytes := window.buffer.data[start:end + 1] // Include cursor position.
             pattern = strings.clone_from_bytes(pattern_bytes, allocator)
             
             // Keep the current selection active.
             window.cursor.sel = start
-            window.cursor.pos = end - 1 // Position at end of selection (last char).
+            window.cursor.pos = end // Position at end of selection (last char).
             window.cursor.line = get_line_from_pos(window.buffer, window.cursor.pos)
             window.cursor.col = window.cursor.pos - window.buffer.line_starts[window.cursor.line]
             success = true
@@ -448,6 +449,26 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
         if success {
             window.multi_cursor_word = pattern
             window.multi_cursor_active = true
+
+            // In visual mode, immediately select the next occurence.
+            if original_mode == .VISUAL {
+            	last_pos := window.cursor.pos
+            	for &c in window.additional_cursors {
+            		last_pos = max(last_pos, c.pos)
+            	}
+            	next_pos, found := find_next_word_occurrence(window.buffer, window.multi_cursor_word, last_pos + 1)
+            	if found {
+            		if add_cursor_at_pos(window, next_pos, allocator) {
+            			last_cursor := &window.additional_cursors[len(window.additional_cursors) - 1]
+                        last_cursor.sel = next_pos
+                        last_cursor.pos = next_pos + len(window.multi_cursor_word) - 1
+                        last_cursor.line = get_line_from_pos(window.buffer, last_cursor.pos)
+                        last_cursor.col = last_cursor.pos - window.buffer.line_starts[last_cursor.line]
+            		} else {
+            			status_line_log(&p.status_line, "No more occurrences of '%s'", window.multi_cursor_word)
+            		}
+            	}
+            }
         }
     } else {
         // Subsequent presses: find next occurrence.

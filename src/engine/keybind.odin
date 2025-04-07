@@ -194,7 +194,13 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 
 		// ESC clears the command buffer.
-		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
+		if press_and_repeat(.ESCAPE) {
+			p.current_window.cursor.color = CURSOR_COLOR
+			clear(&p.keymap.vim_state.normal_cmd_buffer)
+			clear(&p.current_window.additional_cursors)
+			p.current_window.multi_cursor_word = ""
+			p.current_window.multi_cursor_active = false
+		}
 		
 		//
 		// Command buffer evaluation.
@@ -525,26 +531,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			move_cursors(p.current_window, .LEFT)
 		}
 
-		if mode == .NORMAL {
-			// Clear normal mode state.
-			p.current_window.cursor.color = CURSOR_COLOR
-			clear(&p.keymap.vim_state.normal_cmd_buffer)
-			clear(&p.current_window.additional_cursors)
-		    p.current_window.multi_cursor_word = ""
-		    p.current_window.multi_cursor_active = false
-		}
-
-		if mode == .VISUAL || mode == .VISUAL_LINE {
-			// Clear visual mode state.
-			p.current_window.mode = .NORMAL
-			p.current_window.cursor.sel = 0 // Reset selection.
-			for &c in p.current_window.additional_cursors do c.sel = 0 // Reset additional cursor selections.
-	        for rl.GetCharPressed() != 0 {} // Consume pending keys.
-		}
-
-		if mode == .COMMAND || mode == .VISUAL_BLOCK {
-			mode = .NORMAL
-		}
+		mode = .NORMAL
 	case .INSERT:
 		mode = .INSERT
 	case .COMMAND:
@@ -611,16 +598,20 @@ get_out_of_command_mode :: proc(p: ^Pulse) {
 }
 
 append_right_motion :: proc(p: ^Pulse) {
-	current_line_end := len(p.current_window.buffer.data)
-	if p.current_window.cursor.line < len(p.current_window.buffer.line_starts) - 1 {
-		current_line_end =
-			p.current_window.buffer.line_starts[p.current_window.cursor.line + 1] - 1
+	using p.current_window
+
+	current_line_end := len(buffer.data)
+	if cursor.line < len(buffer.line_starts) - 1 {
+		current_line_end = buffer.line_starts[cursor.line + 1] - 1
 	}
 
 	// Only move right if we're not already at the end of the line.
-	if p.current_window.cursor.pos < current_line_end {
-		n_bytes := next_rune_length(p.current_window.buffer.data[:], p.current_window.cursor.pos)
-		p.current_window.cursor.pos += n_bytes
+	if cursor.pos < current_line_end {
+		n_bytes := next_rune_length(buffer.data[:], cursor.pos)
+		cursor.pos += n_bytes
+		for &c in additional_cursors {
+			c.pos += n_bytes
+		}
 	}
 
 	change_mode(p, .INSERT)
