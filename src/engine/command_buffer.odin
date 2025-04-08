@@ -53,7 +53,8 @@ Known_Commands :: []string {
     "ap",
     "dap",
     "cap",
-    "select"
+    "select",
+    "ga"
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
@@ -174,6 +175,8 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
     case "select":
     	assert(p.current_window.mode == .VISUAL || p.current_window.mode == .VISUAL_LINE) 
 	    select_command(p)
+	case "ga":
+		add_global_cursors(p, context.temp_allocator)
 	}
 }
 

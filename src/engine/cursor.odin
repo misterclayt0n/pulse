@@ -498,6 +498,61 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
     }
 }
 
+add_global_cursors :: proc(p: ^Pulse, allocator := context.allocator) {
+	window := p.current_window
+
+	start, end, word, success := select_word_under_cursor(window, allocator)
+	if !success {
+		status_line_log(&p.status_line, "No word under cursor")
+		return
+	}
+	clear(&window.additional_cursors)
+	
+	change_mode(p, .VISUAL)
+	window.cursor.sel = start
+	window.cursor.pos = prev_rune_start(window.buffer.data[:], end)
+	window.cursor.line = get_line_from_pos(window.buffer, window.cursor.pos)
+	window.cursor.col = window.cursor.pos - window.buffer.line_starts[window.cursor.line]
+
+	search_pos := 0
+	word_len := len(word)
+	last_pos := start // Track the last cursor position for scrolling.
+
+	for {
+		next_pos, found := find_next_word_occurrence(window.buffer, word, search_pos)
+		if !found do break
+
+		if next_pos == start {
+			search_pos = next_pos + 1
+			continue
+		}
+
+		if add_cursor_at_pos(window, next_pos, allocator) {
+			last_cursor := &window.additional_cursors[len(window.additional_cursors) - 1]
+            last_cursor.sel = next_pos
+            last_cursor.pos = next_pos + word_len - 1
+            last_cursor.line = get_line_from_pos(window.buffer, last_cursor.pos)
+            last_cursor.col = last_cursor.pos - window.buffer.line_starts[last_cursor.line]
+            last_pos = last_cursor.pos // Update last position.
+		}
+
+		search_pos = next_pos + 1
+	}
+
+	// Set the last added cursor position for scrolling.
+    window.last_added_cursor_pos = last_pos
+
+    // Store the word for potential incremental additions (optional).
+    window.multi_cursor_word = word
+    window.multi_cursor_active = true
+
+    if len(window.additional_cursors) == 0 {
+        status_line_log(&p.status_line, "No additional occurrences of '%s'", word)
+    } else {
+        status_line_log(&p.status_line, "Added %d cursors for '%s'", len(window.additional_cursors) + 1, word)
+    }
+}
+
 // Move all cursors.
 move_cursors :: proc(window: ^Window, movement: Cursor_Movement) {
 	cursor_move(&window.cursor, window.buffer, movement)
