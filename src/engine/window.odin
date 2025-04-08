@@ -23,6 +23,7 @@ Window :: struct {
 	multi_cursor_word:        string,
 	multi_cursor_active:      bool,
 	temp_match_ranges:        [dynamic][2]int, // Real-time highlighting.
+	last_added_cursor_pos:    int
 }
 
 Split_Type :: enum {
@@ -73,11 +74,16 @@ window_init :: proc(
 		visual_block_anchor_col = -1,
 		multi_cursor_word = "",
 		multi_cursor_active = false,
-		temp_match_ranges = make([dynamic][2]int, 0, 10, allocator)
+		temp_match_ranges = make([dynamic][2]int, 0, 10, allocator),
+		last_added_cursor_pos = -1
 	}
 
 	return new_window
 }
+
+//
+// Scrolling
+//
 
 window_scroll :: proc(w: ^Window, font: Font) {
 	//
@@ -85,14 +91,15 @@ window_scroll :: proc(w: ^Window, font: Font) {
 	//
 
 	line_height := f32(font.size) + font.spacing
-	cursor_world_y := 10 + f32(w.cursor.line) * line_height // Absolute Y position of the cursor + 10 hardcoded margin.
 	window_height := w.rect.height
-
-	// Add margin to document height to create empty space at the bottom.
 	line_count := f32(len(w.buffer.line_starts))
 	document_height := 10 + line_count * line_height
 
+	target_line := w.cursor.line
+	if w.last_added_cursor_pos != -1 do target_line = get_line_from_pos(w.buffer, w.last_added_cursor_pos)
+
 	// Calculate cursor position relative to current viewport.
+	cursor_world_y := 10 + f32(target_line) * line_height // Absolute Y position of the cursor + 10 hardcoded margin.
 	cursor_screen_y := cursor_world_y - w.scroll.y
 	needs_scroll := false
 

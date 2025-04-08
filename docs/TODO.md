@@ -42,7 +42,7 @@ Emacs?
 - [ ] Refining multiple cursors:
     - [ ] Global selection (ga motion).
     - [ ] Select backwards.
-    - [ ] Scroll as I keep adding cursors.
+    - [x] Scroll as I keep adding cursors.
 - [ ] Macros?
 - [ ] Clipboard interaction.
 - [ ] Undo/Redo.

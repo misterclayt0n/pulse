@@ -204,6 +204,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			clear(&p.current_window.additional_cursors)
 			p.current_window.multi_cursor_word = ""
 			p.current_window.multi_cursor_active = false
+			p.current_window.last_added_cursor_pos = -1
 		}
 
 		//

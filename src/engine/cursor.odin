@@ -415,7 +415,7 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
         start, end: int
         pattern: string
         success: bool
-        original_mode := window.mode 
+        original_mode := window.mode
 
         if original_mode == .NORMAL {
         	change_mode(p, .VISUAL)
@@ -434,7 +434,7 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
             }
             pattern_bytes := window.buffer.data[start:end + 1] // Include cursor position.
             pattern = strings.clone_from_bytes(pattern_bytes, allocator)
-            
+
             // Keep the current selection active.
             window.cursor.sel = start
             window.cursor.pos = end // Position at end of selection (last char).
@@ -464,11 +464,14 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
                         last_cursor.pos = next_pos + len(window.multi_cursor_word) - 1
                         last_cursor.line = get_line_from_pos(window.buffer, last_cursor.pos)
                         last_cursor.col = last_cursor.pos - window.buffer.line_starts[last_cursor.line]
+                        window.last_added_cursor_pos = last_cursor.pos
             		} else {
             			status_line_log(&p.status_line, "No more occurrences of '%s'", window.multi_cursor_word)
             		}
             	}
             }
+
+            window.last_added_cursor_pos = window.cursor.pos
         }
     } else {
         // Subsequent presses: find next occurrence.
@@ -486,6 +489,7 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
                 last_cursor.pos = next_pos + len(window.multi_cursor_word) - 1
                 last_cursor.line = get_line_from_pos(window.buffer, last_cursor.pos)
                 last_cursor.col = last_cursor.pos - window.buffer.line_starts[last_cursor.line]
+                window.last_added_cursor_pos = last_cursor.pos
             }
         } else {
             // No more occurrences; could wrap around or stop.
