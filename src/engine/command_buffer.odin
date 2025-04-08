@@ -53,6 +53,7 @@ Known_Commands :: []string {
     "ap",
     "dap",
     "cap",
+    "select"
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
@@ -170,39 +171,46 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         delete_inner_paragraph(p)
     case "cap":
         change_inner_paragraph(p)
-
+    case "select":
+    	assert(p.current_window.mode == .VISUAL || p.current_window.mode == .VISUAL_LINE) 
+	    select_command(p)
 	}
 }
 
-// TODO: This function probably needs to get more robust
+// TODO: This function probably needs to get more robust.
 execute_command :: proc(p: ^Pulse) {
+	assert(p.current_window.mode == .COMMAND)
 	cmd := strings.clone_from_bytes(p.status_line.command_window.buffer.data[:])
 	cmd = strings.trim_space(cmd) // Remove leading/trailing whitespace.
 	defer delete(cmd)
 
-	// Handle different commands.
-	switch cmd {
-	case "w":
-		// TODO: Input filename here.
-		status_line_log(&p.status_line, "File saved successfully")
-	case "q":
-		// TODO: This should probably close the buffer/window, not the entire editor probably.
-		p.should_close = true
-	case "wq":
-		// TODO: Input filename here.
-		status_line_log(&p.status_line, "Saved file sucessfully")
-		p.should_close = true
-	case "vsplit":
-		status_line_log(&p.status_line, "Vertical split")
-		window_split_vertical(p)
-	case "split":
-		status_line_log(&p.status_line, "Horizontal split")
-		window_split_horizontal(p)
-	case "close":
-		status_line_log(&p.status_line, "Split closed")
-		window_close_current(p)
-	case:
-		status_line_log(&p.status_line, "Unknown command: %s", cmd)
+	// Handle different commands like "select".
+	if p.keymap.vim_state.last_command == "select" do handle_select_command(p, cmd)
+	
+	else {
+		switch cmd {
+		case "w":
+			// TODO: Input filename here.
+			status_line_log(&p.status_line, "File saved successfully")
+		case "q":
+			// TODO: This should probably close the buffer/window, not the entire editor probably.
+			p.should_close = true
+		case "wq":
+			// TODO: Input filename here.
+			status_line_log(&p.status_line, "Saved file sucessfully")
+			p.should_close = true
+		case "vsplit":
+			status_line_log(&p.status_line, "Vertical split")
+			window_split_vertical(p)
+		case "split":
+			status_line_log(&p.status_line, "Horizontal split")
+			window_split_horizontal(p)
+		case "close":
+			status_line_log(&p.status_line, "Split closed")
+			window_close_current(p)
+		case:
+			status_line_log(&p.status_line, "Unknown command: %s", cmd)
+		}
 	}
 }
 
@@ -410,4 +418,101 @@ change_around_delimiter :: proc(p: ^Pulse, delim: rune) {
         buffer_update_cursor_line_col(p.current_window)
         change_mode(p, .INSERT)
     }
+}
+
+@(private)
+select_command :: proc(p: ^Pulse) {
+	sel := p.current_window.cursor.sel
+    pos := p.current_window.cursor.pos
+    start := min(sel, pos)
+    end := max(sel, pos)
+    buffer_len := len(p.current_window.buffer.data)
+    
+    // If selecting to the end, clamp end to buffer length.
+    if end == buffer_len {
+        end = buffer_len
+    } else if end < buffer_len {
+        end += 1 // Exclusive end for slicing, only if not at buffer end.
+    }
+    
+    p.keymap.vim_state.pattern_selection_start = start
+    p.keymap.vim_state.pattern_selection_end = end
+    
+    // Prompt for pattern in status line.
+    p.status_line.current_prompt = SELECT_COMMAND_STRING
+    p.current_window.mode = .COMMAND
+    p.keymap.vim_state.command_normal = false
+    p.keymap.vim_state.last_command = "select"
+    clear(&p.status_line.command_window.buffer.data)
+    p.status_line.command_window.cursor.pos = len(p.status_line.command_window.buffer.data)
+}
+
+handle_select_command :: proc(p: ^Pulse, cmd: string) {
+    pattern := cmd
+    if strings.has_prefix(pattern, SELECT_COMMAND_STRING) {
+        pattern = strings.trim_prefix(pattern, SELECT_COMMAND_STRING)
+    }
+    if len(pattern) > 0 {
+        buffer := p.current_window.buffer
+        start := p.keymap.vim_state.pattern_selection_start
+        end := p.keymap.vim_state.pattern_selection_end
+        selected_text := strings.trim_space(string(buffer.data[start:end]))
+        occurrences := find_all_occurrences(transmute([]u8)selected_text, pattern)
+
+        // Clear existing additional cursors.
+        clear(&p.current_window.additional_cursors)
+
+        // Add cursors for occurrences starting from the second one.
+        for i := 1; i < len(occurrences); i += 1 {
+            occ := occurrences[i]
+            occ_start := start + occ[0] // == "occ.start"
+            occ_end := start + occ[1] // == "occ.end"
+            new_cursor := Cursor {
+                pos = occ_end - 1, // Last character of match.
+                sel = occ_start,   // Start of match.
+                line = get_line_from_pos(buffer, occ_end - 1),
+                col = (occ_end - 1) - buffer.line_starts[get_line_from_pos(buffer, occ_end - 1)],
+                preferred_col = -1,
+                style = .BLOCK,
+                color = CURSOR_COLOR,
+                blink = false,
+            }
+            append(&p.current_window.additional_cursors, new_cursor)
+        }
+
+        // Set main cursor to the first occurrence (if any).
+        if len(occurrences) > 0 {
+            occ_start := start + occurrences[0][0] // == "occ.start".
+            occ_end := start + occurrences[0][1] // == "occ.end".
+            p.current_window.cursor.sel = occ_start
+            p.current_window.cursor.pos = occ_end - 1
+            p.current_window.cursor.line = get_line_from_pos(buffer, occ_end - 1)
+            p.current_window.cursor.col = (occ_end - 1) - buffer.line_starts[p.current_window.cursor.line]
+        } else {
+            status_line_log(&p.status_line, "No occurrences of '%s'", pattern)
+        }
+    }
+    
+    // Set visual mode directly to preserve selections.
+    p.current_window.mode = .VISUAL
+    clear(&p.keymap.vim_state.normal_cmd_buffer)
+    for rl.GetCharPressed() != 0 {} // Consume pending input.
+    p.status_line.current_prompt = ""
+    clear(&p.current_window.temp_match_ranges) 
+}
+
+@(private)
+find_all_occurrences :: proc(text: []u8, pattern: string) -> [dynamic][2]int {
+    ranges := make([dynamic][2]int, 0, 10)
+    pattern_bytes := transmute([]u8)pattern
+    pos := 0
+    for pos + len(pattern_bytes) <= len(text) {
+        if slice.equal(text[pos:pos + len(pattern_bytes)], pattern_bytes) {
+            append(&ranges, [2]int{pos, pos + len(pattern_bytes)})
+            pos += len(pattern_bytes)
+        } else {
+            pos += 1
+        }
+    }
+    return ranges
 }

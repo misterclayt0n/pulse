@@ -17,6 +17,7 @@ Status_Line :: struct {
 	padding:           f32,
 	command_window:    ^Window,
 	command_indicator: string,
+	current_prompt:    string,
 
 	// Logging.
 	message:           string,
@@ -45,6 +46,7 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 		padding           = 10,
 		command_window    = command_window,
 		command_indicator = "Command:",
+		current_prompt    = "",
 		message           = "",
 		message_duration  = MESSAGE_DURATION, // Show messages for 3 seconds.
 		message_color     = rl.GOLD,
@@ -85,7 +87,11 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 	command_text := string(s.command_window.buffer.data[:])
 
 	if s.mode == "COMMAND" || s.mode == "COMMAND_NORMAL" {
-		status_text = fmt.tprintf("%s%s", s.command_indicator, command_text)
+		if s.current_prompt != "" {
+			status_text = fmt.tprintf("%s%s", s.current_prompt, command_text)
+		} else {
+			status_text = fmt.tprintf("%s%s", s.command_indicator, command_text)
+		}
 	} else {
 		status_text = fmt.tprintf(
 			"%s | %s | %d:%d",
@@ -111,8 +117,12 @@ status_line_draw :: proc(s: ^Status_Line, screen_width, screen_height: i32) {
 		assert(s.command_window != nil, "Command window must be valid")
 		assert(len(s.command_window.buffer.data) >= 0, "Buffer data length should be non-negative")
 		// Measure command indicator width.
-		indicator_width :=
-			rl.MeasureTextEx(s.font.ray_font, cstring(raw_data(s.command_indicator)), f32(s.font.size), s.font.spacing).x
+		indicator_width: f32
+		if s.current_prompt != "" {
+			indicator_width = rl.MeasureTextEx(s.font.ray_font, cstring(raw_data(s.current_prompt)), f32(s.font.size), s.font.spacing).x
+		} else {
+			indicator_width = rl.MeasureTextEx(s.font.ray_font, cstring(raw_data(s.command_indicator)), f32(s.font.size), s.font.spacing).x
+		}
 
 		// Create temporary draw context for cursor.
 		ctx := Draw_Context {

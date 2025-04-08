@@ -36,19 +36,23 @@ Vim_Mode :: enum {
 }
 
 Vim_State :: struct {
-	commands:          [dynamic]u8,
-	last_command:      string, // For repeating commands.
-	command_normal:    bool, // Indicates whether command normal mode is active or not.
-	normal_cmd_buffer: [dynamic]u8, // Stores commands like "dd".
+	commands:                [dynamic]u8,
+	last_command:            string, // For repeating commands.
+	command_normal:          bool, // Indicates whether command normal mode is active or not.
+	normal_cmd_buffer:       [dynamic]u8, // Stores commands like "dd".
+	pattern_selection_start: int, // Start of the selection for pattern search
+	pattern_selection_end:   int, // End of the selection for pattern search
 }
 
 vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 	return Vim_State {
-		commands          = make([dynamic]u8, 0, 1024, allocator),
+		commands                = make([dynamic]u8, 0, 1024, allocator),
 		// TODO: This should store commands from before, not when I initialize the editor state.
-		last_command      = "",
-		command_normal    = false,
-		normal_cmd_buffer = make([dynamic]u8, 0, 16, allocator), // Should never really pass 16 len.
+		last_command            = "",
+		command_normal          = false,
+		normal_cmd_buffer       = make([dynamic]u8, 0, 16, allocator), // Should never really pass 16 len.
+		pattern_selection_start = 0,
+		pattern_selection_end   = 0,
 	}
 }
 
@@ -126,7 +130,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.ZERO) {
 				move_cursors(p.current_window, .LINE_START)
-			} 
+			}
 
 			if press_and_repeat(.B) {
 				if shift_pressed do move_cursors(p.current_window, .BIG_WORD_LEFT)
@@ -136,12 +140,12 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if press_and_repeat(.W) {
 				if shift_pressed do move_cursors(p.current_window, .BIG_WORD_RIGHT)
 				else if ctrl_pressed do window_remove_split(p)
-				else do move_cursors(p.current_window, .WORD_RIGHT) 
+				else do move_cursors(p.current_window, .WORD_RIGHT)
 			}
 
 			if press_and_repeat(.E) {
 				if shift_pressed do move_cursors(p.current_window, .BIG_WORD_END)
-				else do move_cursors(p.current_window, .WORD_END) 
+				else do move_cursors(p.current_window, .WORD_END)
 			}
 
 			if press_and_repeat(.X) do buffer_delete_forward_char(p.current_window)
@@ -152,7 +156,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.D) {
 				if shift_pressed do buffer_delete_to_line_end(p.current_window)
-				else if alt_pressed do add_multi_cursor_word(p, allocator) 
+				else if alt_pressed do add_multi_cursor_word(p, allocator)
 			}
 
 			if press_and_repeat(.C) {
@@ -171,7 +175,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			}
 
 			if press_and_repeat(.FOUR) {
-				if shift_pressed do move_cursors(p.current_window, .LINE_END) 
+				if shift_pressed do move_cursors(p.current_window, .LINE_END)
 			}
 
 			if press_and_repeat(.G) {
@@ -201,7 +205,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			p.current_window.multi_cursor_word = ""
 			p.current_window.multi_cursor_active = false
 		}
-		
+
 		//
 		// Command buffer evaluation.
 		//
@@ -263,6 +267,15 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.X) do delete_visual(p, .NORMAL)
 
 		if press_and_repeat(.C) do delete_visual(p, .INSERT)
+		if press_and_repeat(.S) {
+			append(&p.keymap.vim_state.normal_cmd_buffer, "select")
+	        cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], context.temp_allocator)
+	        defer delete(cmd_str)
+	        if is_command(p.current_window, cmd_str) {
+	            execute_normal_command(p, cmd_str)
+	            clear(&p.keymap.vim_state.normal_cmd_buffer)
+	        }
+		}
 
 		//
 		// Command buffer evaluation.
@@ -316,17 +329,27 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		}
 		if press_and_repeat(.G) && shift_pressed do move_cursors(p.current_window, .FILE_END)
 
-        if press_and_repeat(.D) do delete_visual_line(p, .NORMAL)
+		if press_and_repeat(.D) do delete_visual_line(p, .NORMAL)
 		if press_and_repeat(.C) do delete_visual_line(p, .INSERT)
 		
+		if press_and_repeat(.S) {
+			append(&p.keymap.vim_state.normal_cmd_buffer, "select")
+	        cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], context.temp_allocator)
+	        defer delete(cmd_str)
+	        if is_command(p.current_window, cmd_str) {
+	            execute_normal_command(p, cmd_str)
+	            clear(&p.keymap.vim_state.normal_cmd_buffer)
+	        }
+		}
+
 	case .VISUAL_BLOCK:
-        shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
-        
-        if press_and_repeat(.ESCAPE) {
-            change_mode(p, .NORMAL) 
-            for rl.GetCharPressed() != 0 {} 
-        }
-        
+		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+
+		if press_and_repeat(.ESCAPE) {
+			change_mode(p, .NORMAL)
+			for rl.GetCharPressed() != 0 {}
+		}
+
 		if press_and_repeat(.LEFT) || press_and_repeat(.H) do move_cursors(p.current_window, .LEFT)
 		if press_and_repeat(.RIGHT) || press_and_repeat(.L) do move_cursors(p.current_window, .RIGHT)
 		if press_and_repeat(.UP) || press_and_repeat(.K) do move_cursors(p.current_window, .UP)
@@ -341,36 +364,40 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if press_and_repeat(.MINUS) && shift_pressed do move_cursors(p.current_window, .FIRST_NON_BLANK)
 		if press_and_repeat(.G) && shift_pressed do move_cursors(p.current_window, .FILE_END)
 
-        if press_and_repeat(.D) || press_and_repeat(.X) {
-        	buffer_delete_visual_block_selection(p.current_window)
-        	change_mode(p, .NORMAL)
-        } 
-        if press_and_repeat(.C) {
-        	 buffer_delete_visual_block_selection(p.current_window)
-        	 ok := create_block_cursors(p, .START)
-        	 if ok do change_mode(p, .INSERT)
-        }
-        
-        // TODO: More cursor movement, just testing the idea for now.
+		if press_and_repeat(.D) || press_and_repeat(.X) {
+			buffer_delete_visual_block_selection(p.current_window)
+			change_mode(p, .NORMAL)
+		}
+		if press_and_repeat(.C) {
+			buffer_delete_visual_block_selection(p.current_window)
+			ok := create_block_cursors(p, .START)
+			if ok do change_mode(p, .INSERT)
+		}
 
-        if press_and_repeat(.I) {
-            ok := create_block_cursors(p, .START)
-            if ok do change_mode(p, .INSERT)
-        }
-        
-        if press_and_repeat(.A) {
-            ok := create_block_cursors(p, .END)
-            if ok {
-            	using p.current_window
-                change_mode(p, .INSERT)
-	            // Move right after going to insert mode (main cursor)
-                cursor.pos = buffer_get_pos_from_col(buffer, cursor.line, visual_block_anchor_col + 1)
-                cursor.col = cursor.pos - buffer.line_starts[cursor.line]
-                cursor.preferred_col = cursor.col
-            }
-        }
+		// TODO: More cursor movement, just testing the idea for now.
 
-        
+		if press_and_repeat(.I) {
+			ok := create_block_cursors(p, .START)
+			if ok do change_mode(p, .INSERT)
+		}
+
+		if press_and_repeat(.A) {
+			ok := create_block_cursors(p, .END)
+			if ok {
+				using p.current_window
+				change_mode(p, .INSERT)
+				// Move right after going to insert mode (main cursor)
+				cursor.pos = buffer_get_pos_from_col(
+					buffer,
+					cursor.line,
+					visual_block_anchor_col + 1,
+				)
+				cursor.col = cursor.pos - buffer.line_starts[cursor.line]
+				cursor.preferred_col = cursor.col
+			}
+		}
+
+
 	case .INSERT:
 		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
@@ -413,6 +440,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if rl.IsKeyPressed(.ENTER) {
 			execute_command(p)
 			get_out_of_command_mode(p)
+			p.status_line.current_prompt = ""
 		}
 
 		// Clear message when first entering command mode
@@ -424,7 +452,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if rl.IsKeyPressed(.ESCAPE) {
 			// Refactor this logic here
 			if p.keymap.vim_state.command_normal do change_mode(p, .COMMAND_NORMAL)
-			else do get_out_of_command_mode(p)
+			else {
+				 get_out_of_command_mode(p) 
+				 p.status_line.current_prompt = ""
+			}
 		}
 
 		// Handle cursor movement.
@@ -456,6 +487,22 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			if is_char_supported(rune(key)) do buffer_insert_char(command_window, rune(key))
 			key = rl.GetCharPressed()
 		}
+
+		if p.keymap.vim_state.last_command == "select" {
+		    cmd := string(p.status_line.command_window.buffer.data[:])
+	        start := p.keymap.vim_state.pattern_selection_start
+	        end := p.keymap.vim_state.pattern_selection_end
+	        if start < end && end <= len(p.current_window.buffer.data) {
+	            selected_text := p.current_window.buffer.data[start:end]
+	            clear(&p.current_window.temp_match_ranges)
+	            if len(cmd) > 0 {
+	                p.current_window.temp_match_ranges = find_all_occurrences(selected_text, cmd)
+	            }
+	        } else {
+	            clear(&p.current_window.temp_match_ranges)
+	        }
+		}
+		
 	case .COMMAND_NORMAL:
 		using p.status_line
 
@@ -558,7 +605,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		for &c in additional_cursors {
 			c.sel = c.pos
 		}
-		
+
 	case .VISUAL_LINE:
 		current_line := cursor.line
 		line_start := buffer.line_starts[current_line]
@@ -571,30 +618,35 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 		cursor.pos = line_end
 
 		for &c in additional_cursors {
-	        c_line := c.line
-	        c_line_start := buffer.line_starts[c_line]
-	        c_line_end := len(buffer.data)
-	        if c_line < len(buffer.line_starts) - 1 {
-	            c_line_end = buffer.line_starts[c_line + 1] - 1
-	        }
-	        c.sel = c_line_start
-	        c.pos = c_line_end
-	    }
+			c_line := c.line
+			c_line_start := buffer.line_starts[c_line]
+			c_line_end := len(buffer.data)
+			if c_line < len(buffer.line_starts) - 1 {
+				c_line_end = buffer.line_starts[c_line + 1] - 1
+			}
+			c.sel = c_line_start
+			c.pos = c_line_end
+		}
 
 		mode = .VISUAL_LINE
 	case .VISUAL_BLOCK:
 		visual_block_anchor_line = cursor.line
-		visual_block_anchor_col = cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
+		visual_block_anchor_col =
+			cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
 		clear(&additional_cursors)
 		mode = .VISUAL_BLOCK
 	}
 }
 
 get_out_of_command_mode :: proc(p: ^Pulse) {
-	assert(p.current_window.mode == .COMMAND || p.current_window.mode == .COMMAND_NORMAL)
-	p.current_window.mode = .NORMAL
+	assert(p.current_window.mode == .COMMAND || p.current_window.mode == .COMMAND_NORMAL || p.current_window.mode == .VISUAL)
+	if p.keymap.vim_state.last_command == "select" { }
+	else do p.current_window.mode = .NORMAL
 	clear(&p.status_line.command_window.buffer.data)
 	p.status_line.command_window.cursor.pos = 0
+    p.keymap.vim_state.last_command = "" // Clear last command buffer.
+    clear(&p.keymap.vim_state.normal_cmd_buffer)
+    clear(&p.current_window.temp_match_ranges) 
 }
 
 append_right_motion :: proc(p: ^Pulse) {
@@ -628,76 +680,75 @@ press_and_repeat :: proc(key: rl.KeyboardKey) -> bool {
 @(private)
 insert_newline :: proc(p: ^Pulse, above: bool, allocator := context.allocator) {
 	window := p.current_window
-    cursors := get_sorted_cursors(window, context.temp_allocator)
-    defer delete(cursors, context.temp_allocator)
+	cursors := get_sorted_cursors(window, context.temp_allocator)
+	defer delete(cursors, context.temp_allocator)
 
-        if above {
-        for cursor_ptr in cursors {
-            cursor_ptr.pos = window.buffer.line_starts[cursor_ptr.line]
-            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, false, 0) // No byte adjustment, just sync.
+	if above {
+		for cursor_ptr in cursors {
+			cursor_ptr.pos = window.buffer.line_starts[cursor_ptr.line]
+			adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, false, 0) // No byte adjustment, just sync.
 
-            // Insert newline at this position.
-            resize(&window.buffer.data, len(window.buffer.data) + 1)
-            if cursor_ptr.pos < len(window.buffer.data) - 1 {
-                copy(window.buffer.data[cursor_ptr.pos + 1:], window.buffer.data[cursor_ptr.pos:])
-            }
-            window.buffer.data[cursor_ptr.pos] = '\n'
-            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, true, 1) // Shift cursors right by 1.
+			// Insert newline at this position.
+			resize(&window.buffer.data, len(window.buffer.data) + 1)
+			if cursor_ptr.pos < len(window.buffer.data) - 1 {
+				copy(window.buffer.data[cursor_ptr.pos + 1:], window.buffer.data[cursor_ptr.pos:])
+			}
+			window.buffer.data[cursor_ptr.pos] = '\n'
+			adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, true, 1) // Shift cursors right by 1.
 
-            // Move cursor up to the newly inserted line
-            cursor_ptr.pos = window.buffer.line_starts[cursor_ptr.line] // Already at line start after insert.
-            buffer_mark_dirty(window.buffer)
-            buffer_update_line_starts(window, cursor_ptr.pos)
-        }
+			// Move cursor up to the newly inserted line
+			cursor_ptr.pos = window.buffer.line_starts[cursor_ptr.line] // Already at line start after insert.
+			buffer_mark_dirty(window.buffer)
+			buffer_update_line_starts(window, cursor_ptr.pos)
+		}
 
-        // Update line and column for all cursors after insertions.
-        update_cursor_lines_and_cols(window.buffer, cursors)
-        update_cursors_from_temp_slice(window, cursors)
+		// Update line and column for all cursors after insertions.
+		update_cursor_lines_and_cols(window.buffer, cursors)
+		update_cursors_from_temp_slice(window, cursors)
 
-        // Apply indentation to the newly inserted lines.
-        buffer_update_indentation(window, allocator)
-    } else {
-        for cursor_ptr in cursors {
-            current_line := cursor_ptr.line
-            current_line_start := window.buffer.line_starts[current_line]
-            current_line_length := buffer_line_length(window.buffer, current_line)
+		// Apply indentation to the newly inserted lines.
+		buffer_update_indentation(window, allocator)
+	} else {
+		for cursor_ptr in cursors {
+			current_line := cursor_ptr.line
+			current_line_start := window.buffer.line_starts[current_line]
+			current_line_length := buffer_line_length(window.buffer, current_line)
 
-            // Move to the true end of the current line's content (before any existing newline).
-            cursor_ptr.pos = current_line_start + current_line_length
-            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, false, 0) // Sync positions.
+			// Move to the true end of the current line's content (before any existing newline).
+			cursor_ptr.pos = current_line_start + current_line_length
+			adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos, false, 0) // Sync positions.
 
-            // Insert newline at this position.
-            resize(&window.buffer.data, len(window.buffer.data) + 1)
-            if cursor_ptr.pos < len(window.buffer.data) - 1 {
-                copy(window.buffer.data[cursor_ptr.pos + 1:], window.buffer.data[cursor_ptr.pos:])
-            }
-            window.buffer.data[cursor_ptr.pos] = '\n'
-            cursor_ptr.pos += 1 // Move cursor to start of new line.
-            adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos - 1, true, 1) // Shift cursors right by 1.
+			// Insert newline at this position.
+			resize(&window.buffer.data, len(window.buffer.data) + 1)
+			if cursor_ptr.pos < len(window.buffer.data) - 1 {
+				copy(window.buffer.data[cursor_ptr.pos + 1:], window.buffer.data[cursor_ptr.pos:])
+			}
+			window.buffer.data[cursor_ptr.pos] = '\n'
+			cursor_ptr.pos += 1 // Move cursor to start of new line.
+			adjust_cursors(cursors, cursor_ptr, cursor_ptr.pos - 1, true, 1) // Shift cursors right by 1.
 
-            buffer_mark_dirty(window.buffer)
-            buffer_update_line_starts(window, cursor_ptr.pos - 1)
-        }
+			buffer_mark_dirty(window.buffer)
+			buffer_update_line_starts(window, cursor_ptr.pos - 1)
+		}
 
-        update_cursor_lines_and_cols(window.buffer, cursors)
-        update_cursors_from_temp_slice(window, cursors)
-        buffer_update_indentation(window, allocator)
-    }
+		update_cursor_lines_and_cols(window.buffer, cursors)
+		update_cursors_from_temp_slice(window, cursors)
+		buffer_update_indentation(window, allocator)
+	}
 
-    change_mode(p, .INSERT)
+	change_mode(p, .INSERT)
 }
 
 @(private)
 delete_visual_line :: proc(p: ^Pulse, mode: Vim_Mode) {
-    buffer_delete_visual_line_selection(p.current_window) 
-    clear(&p.current_window.additional_cursors) 
-    change_mode(p, mode) 
+	buffer_delete_visual_line_selection(p.current_window)
+	clear(&p.current_window.additional_cursors)
+	change_mode(p, mode)
 }
 
 delete_visual :: proc(p: ^Pulse, mode: Vim_Mode) {
-    buffer_delete_selection(p.current_window) 
-    change_mode(p, mode)
+	buffer_delete_selection(p.current_window)
+	change_mode(p, mode)
 	clear(&p.keymap.vim_state.normal_cmd_buffer)
-	for rl.GetCharPressed() != 0 {} 
+	for rl.GetCharPressed() != 0 {}
 }
-

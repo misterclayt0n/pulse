@@ -1351,6 +1351,7 @@ buffer_draw :: proc(
 	cursor_draw(window, font, ctx)
 }
 
+// REFACTOR: Split this function for the love of god.
 buffer_draw_visible_lines :: proc(
     p: ^Pulse,
     window: ^Window,
@@ -1379,6 +1380,17 @@ buffer_draw_visible_lines :: proc(
         defer delete(visual_line_ranges)
     }
 
+    match_ranges: [dynamic][2]int
+    if p.keymap.vim_state.last_command == "select" && len(temp_match_ranges) > 0 {
+        start := p.keymap.vim_state.pattern_selection_start
+        for range in temp_match_ranges {
+            abs_start := start + range[0]
+            abs_end := start + range[1]
+            append(&match_ranges, [2]int{abs_start, abs_end})
+        }
+    }
+    defer delete(match_ranges)
+
     // Iterate over visible lines.
     for line in ctx.first_line ..= ctx.last_line {
         line_start := buffer.line_starts[line]
@@ -1393,6 +1405,39 @@ buffer_draw_visible_lines :: proc(
         }
         assert(line_start >= 0 && line_start <= len(buffer.data), "Line start out of bounds")
         assert(line_end >= line_start && line_end <= len(buffer.data), "Line end out of bounds")
+
+        // Highlight temporary matches.
+        if len(match_ranges) > 0 {
+            x_start := ctx.position.x
+            y_pos := ctx.position.y + f32(line - ctx.first_line) * f32(ctx.line_height)
+            for match_range in match_ranges {
+                match_start := match_range[0]
+                match_end := match_range[1]
+                if match_start < line_end && match_end > line_start {
+                    start_pos := max(match_start, line_start)
+                    end_pos := min(match_end, line_end)
+
+                    // Measure text before match.
+                    text_before := buffer.data[line_start:start_pos]
+                    before_str := strings.clone_to_cstring(string(text_before), allocator)
+                    defer delete(before_str, allocator)
+                    x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
+
+                    // Measure match width.
+                    text_match := buffer.data[start_pos:end_pos]
+                    match_str := strings.clone_to_cstring(string(text_match), allocator)
+                    defer delete(match_str, allocator)
+                    match_width := rl.MeasureTextEx(font.ray_font, match_str, f32(font.size), font.spacing).x
+
+                    // Draw highlight.
+                    rl.DrawRectangleV(
+                        {x_start + x_offset, y_pos},
+                        {match_width, f32(font.size)},
+                        SELECTION_COLOR,
+                    )
+                }
+            }
+        }
 
         line_text := string(buffer.data[line_start:line_end])
         line_str := strings.clone_to_cstring(line_text, allocator)

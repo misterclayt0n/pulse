@@ -22,6 +22,7 @@ Window :: struct {
 	visual_block_anchor_col:  int,
 	multi_cursor_word:        string,
 	multi_cursor_active:      bool,
+	temp_match_ranges:        [dynamic][2]int, // Real-time highlighting.
 }
 
 Split_Type :: enum {
@@ -72,6 +73,7 @@ window_init :: proc(
 		visual_block_anchor_col = -1,
 		multi_cursor_word = "",
 		multi_cursor_active = false,
+		temp_match_ranges = make([dynamic][2]int, 0, 10, allocator)
 	}
 
 	return new_window

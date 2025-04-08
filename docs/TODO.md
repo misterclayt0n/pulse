@@ -38,7 +38,11 @@ Emacs?
 
 ### Editing
 - [x] Zed style multiple cursors.
-- [ ] Helix style multiple cursors.
+- [x] Helix style multiple cursors.
+- [ ] Refining multiple cursors:
+    - [ ] Global selection (ga motion).
+    - [ ] Select backwards.
+    - [ ] Scroll as I keep adding cursors.
 - [ ] Macros?
 - [ ] Clipboard interaction.
 - [ ] Undo/Redo.
