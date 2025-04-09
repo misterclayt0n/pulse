@@ -47,6 +47,9 @@ Emacs?
 - [ ] Clipboard interaction.
 - [ ] Undo/Redo.
 - [ ] Search.
+    - [x] Basic implementation.
+    - [ ] FIX: searching currently always looks for the first instance of a word in the entire buffer, instead of considering first the closest instance of the word next to the cursor.
+    - [ ] Some simple glowing UI effect (like when you search something in Focus).
 - [ ] Substitute (probably like Emacs as well).
 - [ ] Drag and drop a file into the editor to open it.
 
