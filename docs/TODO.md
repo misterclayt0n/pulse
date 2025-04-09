@@ -41,7 +41,7 @@ Emacs?
 - [x] Helix style multiple cursors.
 - [ ] Refining multiple cursors:
     - [x] Global selection (ga motion).
-    - [ ] Select backwards.
+    - [x] Select backwards.
     - [x] Scroll as I keep adding cursors.
 - [ ] Macros?
 - [ ] Clipboard interaction.

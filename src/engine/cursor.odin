@@ -498,6 +498,88 @@ add_multi_cursor_word :: proc(p: ^Pulse, allocator := context.allocator) {
     }
 }
 
+// Handles Ctrl+Alt+D logic for multi-cursor word selection, searching backward.
+add_multi_cursor_word_backward :: proc(p: ^Pulse, allocator := context.allocator) {
+    window := p.current_window
+
+    if !window.multi_cursor_active {
+        start, end: int
+        pattern: string
+        success: bool
+        original_mode := window.mode
+
+        if original_mode == .NORMAL {
+            change_mode(p, .VISUAL)
+            start, end, pattern, success = select_word_under_cursor(window, allocator)
+            if !success {
+                status_line_log(&p.status_line, "No word under cursor")
+                return
+            }
+        } else if original_mode == .VISUAL {
+            start = min(window.cursor.sel, window.cursor.pos)
+            end = max(window.cursor.sel, window.cursor.pos)
+            if start == end {
+                status_line_log(&p.status_line, "No valid selection")
+                return
+            }
+            pattern_bytes := window.buffer.data[start:end + 1]
+            pattern = strings.clone_from_bytes(pattern_bytes, allocator)
+            window.cursor.sel = start
+            window.cursor.pos = end
+            window.cursor.line = get_line_from_pos(window.buffer, window.cursor.pos)
+            window.cursor.col = window.cursor.pos - window.buffer.line_starts[window.cursor.line]
+            success = true
+        } else {
+            status_line_log(&p.status_line, "Multi-cursor not supported in this mode")
+            return
+        }
+
+        if success {
+            window.multi_cursor_word = pattern
+            window.multi_cursor_active = true
+            window.last_added_cursor_pos = start 
+        }
+    } else {
+        first_pos := window.cursor.sel 
+        for &c in window.additional_cursors {
+            first_pos = min(first_pos, c.sel) // Find earliest selection start.
+        }
+
+        prev_pos, found := find_previous_word_occurrence(window.buffer, window.multi_cursor_word, first_pos)
+        if found {
+            // Ensure we’re not re-adding an existing cursor
+            if add_cursor_at_pos(window, prev_pos, allocator) {
+                last_cursor := &window.additional_cursors[len(window.additional_cursors) - 1]
+                last_cursor.sel = prev_pos
+                last_cursor.pos = prev_pos + len(window.multi_cursor_word) - 1
+                last_cursor.line = get_line_from_pos(window.buffer, last_cursor.pos)
+                last_cursor.col = last_cursor.pos - window.buffer.line_starts[last_cursor.line]
+                window.last_added_cursor_pos = prev_pos // Track earliest added position.
+            } else {
+                status_line_log(&p.status_line, "No more occurences of '%s'", window.multi_cursor_word)
+            }
+        } else {
+            status_line_log(&p.status_line, "No previous occurrences of '%s' before %d", window.multi_cursor_word, first_pos)
+        }
+    }
+}
+
+// Finds the previous occurrence of a word before a given position
+find_previous_word_occurrence :: proc(buffer: ^Buffer, word: string, start_pos: int) -> (pos: int, found: bool) {
+    search_pos := max(0, start_pos - 1) // Start one position before to avoid matching at start_pos
+    pattern_bytes := transmute([]u8)word
+    pattern_len := len(pattern_bytes)
+
+    for search_pos >= 0 {
+        if search_pos + pattern_len <= len(buffer.data) &&
+           slice.equal(buffer.data[search_pos:search_pos + pattern_len], pattern_bytes) {
+            return search_pos, true
+        }
+        search_pos -= 1
+    }
+    return -1, false
+}
+
 add_global_cursors :: proc(p: ^Pulse, allocator := context.allocator) {
 	window := p.current_window
 

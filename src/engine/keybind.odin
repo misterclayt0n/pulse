@@ -156,7 +156,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 			if press_and_repeat(.D) {
 				if shift_pressed do buffer_delete_to_line_end(p.current_window)
-				else if alt_pressed do add_multi_cursor_word(p, allocator)
+				else if alt_pressed {
+					if ctrl_pressed do add_multi_cursor_word_backward(p, allocator)
+					else do add_multi_cursor_word(p, allocator)
+				} 
 			}
 
 			if press_and_repeat(.C) {
@@ -239,6 +242,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	case .VISUAL:
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
 		alt_pressed := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
+		ctrl_pressed := rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
 
 		// Exit to Normal Mode.
 		if press_and_repeat(.ESCAPE) do change_mode(p, .NORMAL)
@@ -262,7 +266,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 
 		// Selection operations.
 		if press_and_repeat(.D) {
-			if alt_pressed do add_multi_cursor_word(p, allocator)
+			if alt_pressed {
+				if ctrl_pressed do add_multi_cursor_word_backward(p, allocator)
+				else do add_multi_cursor_word(p, allocator)
+			} 
 			else do delete_visual(p, .NORMAL)
 		}
 		if press_and_repeat(.X) do delete_visual(p, .NORMAL)
