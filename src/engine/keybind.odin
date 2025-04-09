@@ -42,6 +42,7 @@ Vim_State :: struct {
 	normal_cmd_buffer:       [dynamic]u8, // Stores commands like "dd".
 	pattern_selection_start: int, // Start of the selection for pattern search
 	pattern_selection_end:   int, // End of the selection for pattern search
+	last_search_pattern:     string,
 }
 
 vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
@@ -53,6 +54,7 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 		normal_cmd_buffer       = make([dynamic]u8, 0, 16, allocator), // Should never really pass 16 len.
 		pattern_selection_start = 0,
 		pattern_selection_end   = 0,
+		last_search_pattern     = "",
 	}
 }
 
@@ -193,6 +195,21 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 				if shift_pressed do insert_newline(p, true)
 				else do insert_newline(p, false)
 			}
+
+			if press_and_repeat(.N) {
+				if shift_pressed do search_move_to_previous(p)
+				else do search_move_to_next(p)
+			}
+
+			if press_and_repeat(.SLASH) {
+				append(&p.keymap.vim_state.normal_cmd_buffer, "search")
+		        cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], context.temp_allocator)
+		        defer delete(cmd_str)
+		        if is_command(p.current_window, cmd_str) {
+		            execute_normal_command(p, cmd_str)
+		            clear(&p.keymap.vim_state.normal_cmd_buffer)
+		        }
+			}
 		}
 
 		if press_and_repeat(.F2) {
@@ -208,6 +225,10 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 			p.current_window.multi_cursor_word = ""
 			p.current_window.multi_cursor_active = false
 			p.current_window.last_added_cursor_pos = -1
+			if p.keymap.vim_state.last_command == "search" {
+                p.keymap.vim_state.last_command = ""
+                clear(&p.current_window.temp_match_ranges)
+            }
 		}
 
 		//
@@ -500,6 +521,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		    cmd := string(p.status_line.command_window.buffer.data[:])
 	        start := p.keymap.vim_state.pattern_selection_start
 	        end := p.keymap.vim_state.pattern_selection_end
+	        clear(&p.current_window.temp_match_ranges)
 	        if start < end && end <= len(p.current_window.buffer.data) {
 	            selected_text := p.current_window.buffer.data[start:end]
 	            clear(&p.current_window.temp_match_ranges)
@@ -510,6 +532,20 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	            clear(&p.current_window.temp_match_ranges)
 	        }
 		}
+		
+		if p.keymap.vim_state.last_command == "search" {
+	        cmd := string(p.status_line.command_window.buffer.data[:])
+	        pattern := strings.trim_space(cmd)
+	        clear(&p.current_window.temp_match_ranges)
+	        if len(pattern) > 0 {
+	            full_text := p.current_window.buffer.data[:]
+	            occurrences := find_all_occurrences(full_text, pattern)
+	            defer delete(occurrences)
+	            for occ in occurrences {
+	                append(&p.current_window.temp_match_ranges, occ)
+	            }
+	        } 
+	    }
 		
 	case .COMMAND_NORMAL:
 		using p.status_line
@@ -647,14 +683,15 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 }
 
 get_out_of_command_mode :: proc(p: ^Pulse) {
-	assert(p.current_window.mode == .COMMAND || p.current_window.mode == .COMMAND_NORMAL || p.current_window.mode == .VISUAL)
-	if p.keymap.vim_state.last_command == "select" { }
+	if p.keymap.vim_state.last_command == "select" {
+		p.current_window.mode = .VISUAL
+	}
 	else do p.current_window.mode = .NORMAL
 	clear(&p.status_line.command_window.buffer.data)
 	p.status_line.command_window.cursor.pos = 0
-    p.keymap.vim_state.last_command = "" // Clear last command buffer.
+    p.keymap.vim_state.last_command = ""
+    clear(&p.current_window.temp_match_ranges)
     clear(&p.keymap.vim_state.normal_cmd_buffer)
-    clear(&p.current_window.temp_match_ranges) 
 }
 
 append_right_motion :: proc(p: ^Pulse) {
@@ -759,4 +796,94 @@ delete_visual :: proc(p: ^Pulse, mode: Vim_Mode) {
 	change_mode(p, mode)
 	clear(&p.keymap.vim_state.normal_cmd_buffer)
 	for rl.GetCharPressed() != 0 {}
+}
+
+@(private)
+search_move_to_next :: proc(p: ^Pulse) {
+    pattern := p.keymap.vim_state.last_search_pattern
+    if len(pattern) == 0 {
+        status_line_log(&p.status_line, "No previous search pattern")
+        return
+    }
+
+    buffer := p.current_window.buffer
+    full_text := buffer.data[:]
+    occurrences := find_all_occurrences(full_text, pattern)
+    defer delete(occurrences)
+
+    if len(occurrences) == 0 {
+        status_line_log(&p.status_line, "No matches found for '%s'", pattern)
+        return
+    }
+
+    current_pos := p.current_window.cursor.pos
+    next_match_start := -1
+
+    // Find the next match after the current position.
+    for occ in occurrences {
+        match_start := occ[0]
+        if match_start > current_pos {
+            next_match_start = match_start
+            break
+        }
+    }
+
+    // If no match found after current position, cycle to the first match.
+    if next_match_start == -1 {
+        next_match_start = occurrences[0][0]
+        status_line_log(&p.status_line, "Cycled to first match of '%s'", pattern)
+    } else {
+        status_line_log(&p.status_line, "Next match of '%s'", pattern)
+    }
+
+    // Move cursor to the next match.
+    p.current_window.cursor.pos = next_match_start
+    p.current_window.cursor.line = get_line_from_pos(buffer, next_match_start)
+    p.current_window.cursor.col = next_match_start - buffer.line_starts[p.current_window.cursor.line]
+    p.current_window.cursor.sel = -1
+}
+
+@(private)
+search_move_to_previous :: proc(p: ^Pulse) {
+    pattern := p.keymap.vim_state.last_search_pattern
+    if len(pattern) == 0 {
+        status_line_log(&p.status_line, "No previous search pattern")
+        return
+    }
+
+    buffer := p.current_window.buffer
+    full_text := buffer.data[:]
+    occurrences := find_all_occurrences(full_text, pattern)
+    defer delete(occurrences)
+
+    if len(occurrences) == 0 {
+        status_line_log(&p.status_line, "No matches found for '%s'", pattern)
+        return
+    }
+
+    current_pos := p.current_window.cursor.pos
+    prev_match_start := -1
+
+    // Find the previous match before the current position
+    for i := len(occurrences) - 1; i >= 0; i -= 1 {
+        match_start := occurrences[i][0]
+        if match_start < current_pos {
+            prev_match_start = match_start
+            break
+        }
+    }
+
+    // If no match found before current position, cycle to the last match.
+    if prev_match_start == -1 {
+        prev_match_start = occurrences[len(occurrences) - 1][0]
+        status_line_log(&p.status_line, "Cycled to last match of '%s'", pattern)
+    } else {
+        status_line_log(&p.status_line, "Previous match of '%s'", pattern)
+    }
+
+    // Move cursor to the previous match.
+    p.current_window.cursor.pos = prev_match_start
+    p.current_window.cursor.line = get_line_from_pos(buffer, prev_match_start)
+    p.current_window.cursor.col = prev_match_start - buffer.line_starts[p.current_window.cursor.line]
+    p.current_window.cursor.sel = -1
 }

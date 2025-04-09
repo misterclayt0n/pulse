@@ -54,6 +54,7 @@ Known_Commands :: []string {
     "dap",
     "cap",
     "select",
+    "search",
     "ga"
 }
 
@@ -173,8 +174,10 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
     case "cap":
         change_inner_paragraph(p)
     case "select":
-    	assert(p.current_window.mode == .VISUAL || p.current_window.mode == .VISUAL_LINE) 
+    	assert(p.current_window.mode == .VISUAL || p.current_window.mode == .VISUAL_LINE)
 	    select_command(p)
+	case "search":
+		search_command(p)
 	case "ga":
 		add_global_cursors(p, context.temp_allocator)
 	}
@@ -189,6 +192,7 @@ execute_command :: proc(p: ^Pulse) {
 
 	// Handle different commands like "select".
 	if p.keymap.vim_state.last_command == "select" do handle_select_command(p, cmd)
+	if p.keymap.vim_state.last_command == "search" do handle_search_command(p, cmd)
 	
 	else {
 		switch cmd {
@@ -293,6 +297,7 @@ delete_inner_paragraph :: proc(p: ^Pulse) {
 		buffer_update_cursor_line_col(p.current_window)
 	}
 }
+
 @(private)
 change_inner_paragraph :: proc(p: ^Pulse) {
 	buffer := p.current_window.buffer
@@ -424,6 +429,17 @@ change_around_delimiter :: proc(p: ^Pulse, delim: rune) {
 }
 
 @(private)
+search_command :: proc(p: ^Pulse) {
+	p.status_line.current_prompt = SEARCH_COMMAND_STRING
+	p.current_window.mode = .COMMAND
+    p.keymap.vim_state.command_normal = false
+    p.keymap.vim_state.last_command = "search"
+    clear(&p.status_line.command_window.buffer.data)
+    p.status_line.command_window.cursor.pos = 0
+    clear(&p.current_window.temp_match_ranges)
+}
+
+@(private)
 select_command :: proc(p: ^Pulse) {
 	sel := p.current_window.cursor.sel
     pos := p.current_window.cursor.pos
@@ -448,6 +464,43 @@ select_command :: proc(p: ^Pulse) {
     p.keymap.vim_state.last_command = "select"
     clear(&p.status_line.command_window.buffer.data)
     p.status_line.command_window.cursor.pos = len(p.status_line.command_window.buffer.data)
+}
+
+handle_search_command :: proc(p: ^Pulse, cmd: string) {
+    pattern := strings.trim_space(cmd)
+    if len(pattern) == 0 {
+        status_line_log(&p.status_line, "Empty search pattern")
+        clear(&p.current_window.temp_match_ranges)
+        return
+    }
+    p.keymap.vim_state.last_search_pattern = strings.clone(pattern, context.temp_allocator)
+
+    buffer := p.current_window.buffer
+    full_text := buffer.data[:]
+    occurrences := find_all_occurrences(full_text, pattern)
+    defer delete(occurrences)
+
+    // Update temp_match_ranges with all matches.
+    clear(&p.current_window.temp_match_ranges)
+    for occ in occurrences {
+        append(&p.current_window.temp_match_ranges, occ)
+    }
+
+    // Move cursor to the first match in the buffer, regardless of current position.
+    if len(occurrences) > 0 {
+        match_start := occurrences[0][0]
+        p.current_window.cursor.pos = match_start
+        p.current_window.cursor.line = get_line_from_pos(buffer, match_start)
+        p.current_window.cursor.col = match_start - buffer.line_starts[p.current_window.cursor.line]
+        p.current_window.cursor.sel = -1
+        status_line_log(&p.status_line, "Found '%s'", pattern)
+    } else {
+        status_line_log(&p.status_line, "No matches found for '%s'", pattern)
+    }
+
+    p.current_window.mode = .NORMAL
+    p.status_line.current_prompt = ""
+    clear(&p.keymap.vim_state.normal_cmd_buffer)
 }
 
 handle_select_command :: proc(p: ^Pulse, cmd: string) {

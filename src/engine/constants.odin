@@ -24,3 +24,4 @@ LINE_NUMBER_PADDING :: 5.0
 GAP :: 30.0 // Additional gap between line numbers and text.
 INDENT_SIZE :: 4
 SELECT_COMMAND_STRING :: "Pattern:"
+SEARCH_COMMAND_STRING :: "Search:"
