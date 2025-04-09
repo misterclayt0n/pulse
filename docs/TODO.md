@@ -39,7 +39,7 @@ Emacs?
 ### Editing
 - [x] Zed style multiple cursors.
 - [x] Helix style multiple cursors.
-- [ ] Refining multiple cursors:
+- [x] Refining multiple cursors:
     - [x] Global selection (ga motion).
     - [x] Select backwards.
     - [x] Scroll as I keep adding cursors.
