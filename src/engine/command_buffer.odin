@@ -5,6 +5,7 @@ import "core:slice"
 import "core:strings"
 import "core:math/big"
 import rl "vendor:raylib"
+import "core:simd"
 import "core:unicode/utf8"
 
 // NOTE: Leader key is hard coded as space.
@@ -561,14 +562,39 @@ handle_select_command :: proc(p: ^Pulse, cmd: string) {
 find_all_occurrences :: proc(text: []u8, pattern: string) -> [dynamic][2]int {
     ranges := make([dynamic][2]int, 0, 10)
     pattern_bytes := transmute([]u8)pattern
+    pattern_len := len(pattern_bytes)
+    text_len := len(text)
+    if pattern_len == 0 || pattern_len > text_len do return ranges
+
+    // Preprocess the bad character table.
+    bad_char := make([]int, 256, context.temp_allocator) // ASCII size
+    for i in 0 ..< 256 {
+        bad_char[i] = pattern_len // Default skip is pattern length
+    }
+    for i in 0 ..< pattern_len - 1 {
+        bad_char[pattern_bytes[i]] = pattern_len - i - 1 // Distance from rightmost occurrence
+    }
+
+    // Search loop using Boyer-Moore.
     pos := 0
-    for pos + len(pattern_bytes) <= len(text) {
-        if slice.equal(text[pos:pos + len(pattern_bytes)], pattern_bytes) {
-            append(&ranges, [2]int{pos, pos + len(pattern_bytes)})
-            pos += len(pattern_bytes)
+    for pos <= text_len - pattern_len {
+        // Compare from right to left.
+        j := pattern_len - 1
+        for j >= 0 && text[pos + j] == pattern_bytes[j] {
+            j -= 1
+        }
+
+        if j < 0 {
+            // Full match found.
+            append(&ranges, [2]int{pos, pos + pattern_len})
+            pos += pattern_len // Skip to avoid overlaps (adjust if overlaps are desired)
         } else {
-            pos += 1
+            // Mismatch: Skip based on bad character rule.
+            mismatch_char := text[pos + j]
+            skip := bad_char[mismatch_char]
+            pos += max(1, skip) // Ensure at least one byte is skipped
         }
     }
+
     return ranges
 }
