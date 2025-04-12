@@ -497,25 +497,45 @@ handle_search_command :: proc(p: ^Pulse, cmd: string) {
     occurrences := find_all_occurrences(full_text, pattern)
     defer delete(occurrences)
 
-    // Store the searched text and trigger the temp highlight.
-    p.current_window.searched_text = strings.clone(pattern, context.allocator) // Persistent storage.
+    if len(occurrences) == 0 {
+    	status_line_log(&p.status_line, "No matches found for '%s'", pattern)
+    	clear(&p.current_window.temp_match_ranges)
+    	return
+    }
+
+    current_pos := p.current_window.cursor.pos
+    nearest_match := occurrences[0]
+    min_distance := abs(current_pos - nearest_match[0])
+
+    for occ in occurrences[1:] {
+    	distance := abs(current_pos - nearest_match[0])
+    	if distance < min_distance {
+    		min_distance = distance
+            nearest_match = occ
+    	} else if distance == min_distance {
+    		// If distances are equal, prefer the match after the cursor.
+            if occ[0] > current_pos && nearest_match[0] <= current_pos {
+                nearest_match = occ
+            }
+    	}
+    }
+
+    // Move cursor to the nearest match.
+    match_start := nearest_match[0]
+    p.current_window.cursor.pos = match_start
+    p.current_window.cursor.line = get_line_from_pos(buffer, match_start)
+    p.current_window.cursor.col = match_start - buffer.line_starts[p.current_window.cursor.line]
+    p.current_window.cursor.sel = -1
+
+    // Store the searched text and trigger temporary highlight.
+    p.current_window.searched_text = strings.clone(pattern, context.allocator)
     p.current_window.highlight_searched = true
     p.current_window.highlight_timer = 0.0
 
-    // Update temp_match_ranges with all matches.
+    // Clear real-time highlights.
     clear(&p.current_window.temp_match_ranges)
 
-    // Move cursor to the first match in the buffer, regardless of current position.
-    if len(occurrences) > 0 {
-        match_start := occurrences[0][0]
-        p.current_window.cursor.pos = match_start
-        p.current_window.cursor.line = get_line_from_pos(buffer, match_start)
-        p.current_window.cursor.col = match_start - buffer.line_starts[p.current_window.cursor.line]
-        p.current_window.cursor.sel = -1
-        status_line_log(&p.status_line, "Found '%s'", pattern)
-    } else {
-        status_line_log(&p.status_line, "No matches found for '%s'", pattern)
-    }
+    status_line_log(&p.status_line, "Found '%s'", pattern)
 
     p.current_window.mode = .NORMAL
     p.status_line.current_prompt = ""
