@@ -841,6 +841,9 @@ search_move_to_next :: proc(p: ^Pulse) {
     p.current_window.cursor.line = get_line_from_pos(buffer, next_match_start)
     p.current_window.cursor.col = next_match_start - buffer.line_starts[p.current_window.cursor.line]
     p.current_window.cursor.sel = -1
+    p.current_window.searched_text = strings.clone(pattern, context.allocator) // Persistent storage.
+    p.current_window.highlight_searched = true
+    p.current_window.highlight_timer = 0.0
 }
 
 @(private)
@@ -886,4 +889,7 @@ search_move_to_previous :: proc(p: ^Pulse) {
     p.current_window.cursor.line = get_line_from_pos(buffer, prev_match_start)
     p.current_window.cursor.col = prev_match_start - buffer.line_starts[p.current_window.cursor.line]
     p.current_window.cursor.sel = -1
+    p.current_window.searched_text = strings.clone(pattern, context.allocator) // Persistent storage.
+    p.current_window.highlight_searched = true
+    p.current_window.highlight_timer = 0.0
 }

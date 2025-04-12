@@ -23,7 +23,11 @@ Window :: struct {
 	multi_cursor_word:        string,
 	multi_cursor_active:      bool,
 	temp_match_ranges:        [dynamic][2]int, // Real-time highlighting.
-	last_added_cursor_pos:    int
+	last_added_cursor_pos:    int,
+	searched_text:            string, // Stores the text searched after Enter
+	highlight_searched:       bool, // Flag to trigger temporary highlight
+	highlight_timer:          f32, // Timer for fading effect
+	highlight_duration:       f32, // Duration of the highlight (e.g., 0.5 seconds)
 }
 
 Split_Type :: enum {
@@ -75,7 +79,11 @@ window_init :: proc(
 		multi_cursor_word = "",
 		multi_cursor_active = false,
 		temp_match_ranges = make([dynamic][2]int, 0, 10, allocator),
-		last_added_cursor_pos = -1
+		last_added_cursor_pos = -1,
+		searched_text = "",
+        highlight_searched = false,
+        highlight_timer = 0.0,
+        highlight_duration = 0.5, // 0.5 seconds for the highlight duration
 	}
 
 	return new_window
@@ -163,6 +171,11 @@ window_scroll :: proc(w: ^Window, font: Font) {
 //
 
 window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allocator) {
+	if w.highlight_searched {
+		w.highlight_timer += rl.GetFrameTime()
+		if w.highlight_timer >= w.highlight_duration do w.highlight_searched = false
+	}
+	
 	screen_width := i32(w.rect.width)
 	screen_height := i32(w.rect.height)
 	line_height := f32(font.size) + font.spacing

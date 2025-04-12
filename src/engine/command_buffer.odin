@@ -495,11 +495,13 @@ handle_search_command :: proc(p: ^Pulse, cmd: string) {
     occurrences := find_all_occurrences(full_text, pattern)
     defer delete(occurrences)
 
+    // Store the searched text and trigger the temp highlight.
+    p.current_window.searched_text = strings.clone(pattern, context.allocator) // Persistent storage.
+    p.current_window.highlight_searched = true
+    p.current_window.highlight_timer = 0.0
+
     // Update temp_match_ranges with all matches.
     clear(&p.current_window.temp_match_ranges)
-    for occ in occurrences {
-        append(&p.current_window.temp_match_ranges, occ)
-    }
 
     // Move cursor to the first match in the buffer, regardless of current position.
     if len(occurrences) > 0 {

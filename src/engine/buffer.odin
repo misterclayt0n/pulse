@@ -1450,6 +1450,44 @@ buffer_draw_visible_lines :: proc(
 		    }
 		}
 
+		// Draw temporary highlight for searched_text (light blue with fade).
+        if highlight_searched && len(searched_text) > 0 {
+            x_start := ctx.position.x
+            y_pos := ctx.position.y + f32(line) * f32(ctx.line_height)
+            match_start := cursor.pos // Highlight starts at cursor position.
+            match_end := match_start + len(searched_text) // Assumes match length equals searched_text length.
+
+            if match_start < line_end && match_end > line_start {
+                start_pos := max(match_start, line_start)
+                end_pos := min(match_end, line_end)
+
+                text_before := buffer.data[line_start:start_pos]
+                before_str := strings.clone_to_cstring(string(text_before), allocator)
+                defer delete(before_str, allocator)
+                x_offset := rl.MeasureTextEx(font.ray_font, before_str, f32(font.size), font.spacing).x
+
+                text_match := buffer.data[start_pos:end_pos]
+                match_str := strings.clone_to_cstring(string(text_match), allocator)
+                defer delete(match_str, allocator)
+                match_width := rl.MeasureTextEx(font.ray_font, match_str, f32(font.size), font.spacing).x
+
+                if start_pos == end_pos && start_pos >= line_start && start_pos < line_end {
+                    match_width = font.char_width
+                }
+
+                // Calculate opacity for fading effect.
+                opacity := 1.0 - (highlight_timer / highlight_duration)
+                if opacity > 0 {
+                    highlight_color := rl.Fade(TEMP_HIGHLIGHT_COLOR, opacity)
+                    rl.DrawRectangleV(
+                        {x_start + x_offset, y_pos},
+                        {match_width, f32(ctx.line_height)},
+                        highlight_color,
+                    )
+                }
+            }
+        }
+
         line_text := string(buffer.data[line_start:line_end])
         line_str := strings.clone_to_cstring(line_text, allocator)
         defer delete(line_str, allocator)
