@@ -41,7 +41,7 @@ pulse_init :: proc(font_path: string, allocator := context.allocator) -> Pulse {
 	assert(screen_width > 0, "Screen width must be positive")
 	assert(screen_height > 0, "Screen height must be positive")
 
-	initial_window := window_init(buffer, {0, 0, screen_width, screen_height}, allocator)
+	initial_window := window_init(buffer, font, {0, 0, screen_width, screen_height}, allocator)
 	assert(initial_window.buffer != nil, "Window buffer is invalid")
 
 	windows := make([dynamic]Window, allocator)
@@ -104,7 +104,7 @@ pulse_draw :: proc(p: ^Pulse, allocator := context.allocator) {
 	assert(len(p.windows) > 0, "No windows to draw")
 	for i := 0; i < len(p.windows); i += 1 {
 		window := &p.windows[i]
-		window_draw(p, window, p.font, allocator)
+		window_draw(p, window, allocator)
 	}
 
 	// Find and draw all split edges.

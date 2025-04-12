@@ -33,7 +33,7 @@ status_line_init :: proc(font: Font, allocator := context.allocator) -> Status_L
 	assert(command_buffer != nil, "Command buffer allocation failed")
 
 	command_window := new(Window, allocator)
-	command_window^ = window_init(command_buffer, {0, 0, 0, 0}) // Rect will be updated during draw.
+	command_window^ = window_init(command_buffer, font, {0, 0, 0, 0}) // Rect will be updated during draw.
 	assert(command_window != nil, "Command window allocation failed")
 
 	return Status_Line {

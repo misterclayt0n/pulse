@@ -439,7 +439,7 @@ cursor_draw :: proc(window: ^Window, font: Font, ctx: Draw_Context) {
 // Window drawing.
 // 
 
-window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allocator) {
+window_draw :: proc(p: ^Pulse, w: ^Window, allocator := context.allocator) {
 	if w.highlight_searched {
 		w.highlight_timer += rl.GetFrameTime()
 		if w.highlight_timer >= w.highlight_duration do w.highlight_searched = false
@@ -447,7 +447,7 @@ window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allo
 	
 	screen_width := i32(w.rect.width)
 	screen_height := i32(w.rect.height)
-	line_height := f32(font.size) + font.spacing
+	line_height := f32(w.font.size) + w.font.spacing
 
 	// Calculate visible lines based on scroll position.
 	first_visible_line := int((w.scroll.y - 10) / line_height)
@@ -484,7 +484,7 @@ window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allo
 	// Draw line numbers and set text_offset.
 	window_draw_line_numbers(
 		w,
-		font,
+		w.font,
 		first_visible_line,
 		last_visible_line,
 		line_height,
@@ -503,5 +503,5 @@ window_draw :: proc(p: ^Pulse, w: ^Window, font: Font, allocator := context.allo
 	}
 
 	// Draw the actual buffer.
-	buffer_draw(p, w, font, ctx, allocator)
+	buffer_draw(p, w, w.font, ctx, allocator)
 }

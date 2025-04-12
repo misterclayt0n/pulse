@@ -8,6 +8,7 @@ import rl "vendor:raylib"
 Window :: struct {
 	buffer:                   ^Buffer,
 	cursor:                   Cursor,
+	font:                     Font,
 	additional_cursors:       [dynamic]Cursor,
 	rect:                     rl.Rectangle,
 	scroll:                   rl.Vector2,
@@ -47,6 +48,7 @@ Split_Edge :: struct {
 
 window_init :: proc(
 	buffer: ^Buffer,
+	font: Font,
 	rect: rl.Rectangle,
 	allocator := context.allocator,
 ) -> Window {
@@ -55,6 +57,7 @@ window_init :: proc(
 
 	new_window := Window {
 		buffer = buffer,
+		font = font,
 		rect = rect,
 		scroll = {0, 0},
 		is_focus = true,
@@ -215,7 +218,7 @@ window_draw_line_numbers :: proc(
 	assert(w.text_offset >= MARGIN_X, "Text offset less than margin")
 }
 
-window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
+window_split_vertical :: proc(p: ^Pulse, font: Font, allocator := context.allocator) {
 	assert(len(p.windows) > 0, "Cannot split on an empty window list")
 	assert(p.windows[0].buffer != nil, "Root window has corrupt buffer")
 
@@ -242,6 +245,7 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 	if len(p.windows) == 1 {
 		new_window := window_init(
 			p.windows[0].buffer,
+			font,
 			rl.Rectangle {
 				x = split_pos,
 				y = 0,
@@ -268,7 +272,7 @@ window_split_vertical :: proc(p: ^Pulse, allocator := context.allocator) {
 	}
 }
 
-window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
+window_split_horizontal :: proc(p: ^Pulse, font: Font, allocator := context.allocator) {
 	assert(len(p.windows) > 0, "Cannot split on an empty window list")
 	assert(p.windows[0].buffer != nil, "Root window has corrupt buffer")
 
@@ -295,6 +299,7 @@ window_split_horizontal :: proc(p: ^Pulse, allocator := context.allocator) {
 	if len(p.windows) == 1 {
 		new_window := window_init(
 			p.windows[0].buffer,
+			font,
 			rl.Rectangle {
 				x = 0,
 				y = split_pos,

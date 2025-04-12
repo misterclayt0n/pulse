@@ -212,10 +212,12 @@ execute_command :: proc(p: ^Pulse) {
 			p.should_close = true
 		case "vsplit":
 			status_line_log(&p.status_line, "Vertical split")
-			window_split_vertical(p)
+			// Just testing this thing out kkkkk.
+			new_font := load_font_with_codepoints("fonts/FiraSans-Regular.ttf", DEFAULT_FONT_SIZE, TEXT_COLOR, context.temp_allocator)
+			window_split_vertical(p, new_font) 
 		case "split":
 			status_line_log(&p.status_line, "Horizontal split")
-			window_split_horizontal(p)
+			window_split_horizontal(p, p.font)
 		case "close":
 			status_line_log(&p.status_line, "Split closed")
 			window_close_current(p)
