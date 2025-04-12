@@ -36,6 +36,7 @@ Known_Commands :: []string {
 	"di\"",
 	"di'",
 	"dip", // Delete inner paragraph
+	"diw",
     "a(",
     "a[",
     "a{",
@@ -135,6 +136,8 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
         delete_inner_delimiter(p, '\'')
     case "dip":
     	delete_inner_paragraph(p)
+    case "diw": 
+	    delete_inner_word(p)
 
 	// Around commands.
 
@@ -253,6 +256,17 @@ change_inner_word :: proc(p: ^Pulse) {
 		buffer_delete_range(p.current_window, start, end)
 		p.current_window.cursor.pos = start
 		change_mode(p, .INSERT)
+	}
+}
+
+@(private)
+delete_inner_word :: proc(p: ^Pulse) {
+	assert(p.current_window.mode == .NORMAL, "Need to be in normal mode to use this motion")
+	start, end := find_word_boundaries(p.current_window.buffer, p.current_window.cursor.pos)
+
+	if start < end {
+		buffer_delete_range(p.current_window, start, end)
+		p.current_window.cursor.pos = start
 	}
 }
 
