@@ -1,0 +1,13 @@
+#include <stdio.h>
+
+int main() {
+	int hello = sexo();
+	printf("%d: %d", hello, hello);
+	return 0;
+}
+
+int sexo() {
+	int sexo_brutal = 10;
+	int sexo_manso = 20;
+	return sexo_brutal + sexo_manso;
+}

@@ -135,6 +135,25 @@ buffer_insert_text :: proc(window: ^Window, text: string) {
 	update_cursors_from_temp_slice(window, cursors)
 }
 
+buffer_insert_text_at :: proc(window: ^Window, pos: int, text: string) {
+    using window
+    assert(pos >= 0 && pos <= len(buffer.data), "Position out of bounds")
+    assert(len(text) != 0, "The length of the text should not be 0")
+    text_bytes := transmute([]u8)text
+    n_bytes := len(text_bytes)
+
+    // Make space for new text.
+    resize(&buffer.data, len(buffer.data) + n_bytes)
+    if pos < len(buffer.data) - n_bytes {
+        copy(buffer.data[pos + n_bytes:], buffer.data[pos:])
+    }
+    // Insert the text.
+    copy(buffer.data[pos:], text_bytes)
+
+    buffer_mark_dirty(buffer)
+    buffer_update_line_starts(window, pos)
+}
+
 buffer_insert_char :: proc(window: ^Window, char: rune) {
 	using window
 	assert(utf8.valid_rune(char), "Invalid UTF-8 rune inserted")

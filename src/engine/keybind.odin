@@ -43,6 +43,15 @@ Vim_State :: struct {
 	pattern_selection_start: int, // Start of the selection for pattern search
 	pattern_selection_end:   int, // End of the selection for pattern search
 	last_search_pattern:     string,
+
+	// Replace command.
+	replace_stage:           int,               // 0: inactive, 1: pattern, 2: replacement, 3: interactive
+	replace_pattern:         string,            // Text to replace
+	replace_replacement:     string,            // Replacement text
+	replace_matches:         [dynamic][2]int,  // Array of match ranges [start, end]
+	replace_current_idx:     int,              // Index of the current match
+	replace_sel_start:       int,              // Start of the selected region
+	replace_sel_end:         int,              // End of the selected region
 }
 
 vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
@@ -55,6 +64,13 @@ vim_state_init :: proc(allocator := context.allocator) -> Vim_State {
 		pattern_selection_start = 0,
 		pattern_selection_end   = 0,
 		last_search_pattern     = "",
+		replace_stage           = 0,
+		replace_pattern         = "",
+		replace_replacement     = "",
+		replace_matches         = make([dynamic][2]int, 0, 10, allocator),
+		replace_current_idx     = 0,
+		replace_sel_start       = 0,
+		replace_sel_end         = 0,
 	}
 }
 
@@ -306,6 +322,16 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	        }
 		}
 
+		if press_and_repeat(.R) {
+			append(&p.keymap.vim_state.normal_cmd_buffer, "replace")
+			cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], context.temp_allocator)
+			defer delete(cmd_str)
+			if is_command(p.current_window, cmd_str) {
+				execute_normal_command(p, cmd_str)
+				clear(&p.keymap.vim_state.normal_cmd_buffer)
+			}
+		}
+
 		//
 		// Command buffer evaluation.
 		//
@@ -369,6 +395,16 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 	            execute_normal_command(p, cmd_str)
 	            clear(&p.keymap.vim_state.normal_cmd_buffer)
 	        }
+		}
+
+		if press_and_repeat(.R) {
+			append(&p.keymap.vim_state.normal_cmd_buffer, "replace")
+			cmd_str := strings.clone_from_bytes(p.keymap.vim_state.normal_cmd_buffer[:], context.temp_allocator)
+			defer delete(cmd_str)
+			if is_command(p.current_window, cmd_str) {
+				execute_normal_command(p, cmd_str)
+				clear(&p.keymap.vim_state.normal_cmd_buffer)
+			}
 		}
 
 	case .VISUAL_BLOCK:
@@ -466,11 +502,7 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		using p.status_line
 		key := rl.GetCharPressed()
 
-		if rl.IsKeyPressed(.ENTER) {
-			execute_command(p)
-			get_out_of_command_mode(p)
-			p.status_line.current_prompt = ""
-		}
+		if rl.IsKeyPressed(.ENTER) do execute_command(p)
 
 		// Clear message when first entering command mode
 		if !(p.status_line.message_timestamp > 0) do status_line_clear_message(&p.status_line)
@@ -481,73 +513,107 @@ vim_state_update :: proc(p: ^Pulse, allocator := context.allocator) {
 		if rl.IsKeyPressed(.ESCAPE) {
 			// Refactor this logic here
 			if p.keymap.vim_state.command_normal do change_mode(p, .COMMAND_NORMAL)
+			if p.keymap.vim_state.last_command == "replace" {
+				reset_replace_state(p)
+				get_out_of_command_mode(p)
+			}
 			else {
-				 get_out_of_command_mode(p) 
-				 p.status_line.current_prompt = ""
+				get_out_of_command_mode(p)
+				p.status_line.current_prompt = ""
 			}
 		}
 
-		// Handle cursor movement.
-		if press_and_repeat(.LEFT) do move_cursors(command_window, .LEFT)
-		if press_and_repeat(.RIGHT) do move_cursors(command_window, .RIGHT)
-		if press_and_repeat(.DELETE) do buffer_delete_forward_char(command_window)
-		if press_and_repeat(.HOME) do move_cursors(command_window, .LINE_START)
-		if press_and_repeat(.END) do move_cursors(command_window, .LINE_END)
-
-		if ctrl_pressed {
-			if press_and_repeat(.B) do move_cursors(command_window, .LEFT)
-			if press_and_repeat(.F) do move_cursors(command_window, .RIGHT)
-			if press_and_repeat(.E) do move_cursors(command_window, .LINE_END)
-			if press_and_repeat(.A) do move_cursors(command_window, .LINE_START)
-			if press_and_repeat(.K) do buffer_delete_to_line_end(command_window)
+		if p.keymap.vim_state.replace_stage == 1 {
+			cmd := string(p.status_line.command_window.buffer.data[:])
+			start := p.keymap.vim_state.replace_sel_start
+			end := p.keymap.vim_state.replace_sel_end
+			if start < end && end <= len(p.current_window.buffer.data) {
+				selected_text := p.current_window.buffer.data[start:end]
+				clear(&p.current_window.temp_match_ranges)
+				if len(cmd) > 0 {
+					occurrences := find_all_occurrences(selected_text, cmd)
+					for occ in occurrences {
+						append(&p.current_window.temp_match_ranges, [2]int{start + occ[0], start + occ[1]})
+					}
+					delete(occurrences)
+				} else do clear(&p.current_window.temp_match_ranges)
+			}
 		}
 
-		if alt_pressed {
-			if press_and_repeat(.F) do move_cursors(command_window, .WORD_RIGHT)
-			if press_and_repeat(.B) do move_cursors(command_window, .WORD_LEFT)
+		if p.keymap.vim_state.replace_stage == 3 {
+			clear(&p.status_line.command_window.buffer.data)
+			if rl.IsKeyPressed(.Y) {
+				replace_current_match(p)
+				move_to_next_match(p)
+			} else if rl.IsKeyPressed(.N) {
+				move_to_next_match(p)
+			} else if rl.IsKeyPressed(.ESCAPE) {
+				reset_replace_state(p)
+				get_out_of_command_mode(p)
+			}
+		} else {
+			// Handle cursor movement.
+			if press_and_repeat(.LEFT) do move_cursors(command_window, .LEFT)
+			if press_and_repeat(.RIGHT) do move_cursors(command_window, .RIGHT)
+			if press_and_repeat(.DELETE) do buffer_delete_forward_char(command_window)
+			if press_and_repeat(.HOME) do move_cursors(command_window, .LINE_START)
+			if press_and_repeat(.END) do move_cursors(command_window, .LINE_END)
+
+			if ctrl_pressed {
+				if press_and_repeat(.B) do move_cursors(command_window, .LEFT)
+				if press_and_repeat(.F) do move_cursors(command_window, .RIGHT)
+				if press_and_repeat(.E) do move_cursors(command_window, .LINE_END)
+				if press_and_repeat(.A) do move_cursors(command_window, .LINE_START)
+				if press_and_repeat(.K) do buffer_delete_to_line_end(command_window)
+			}
+
+			if alt_pressed {
+				if press_and_repeat(.F) do move_cursors(command_window, .WORD_RIGHT)
+				if press_and_repeat(.B) do move_cursors(command_window, .WORD_LEFT)
+			}
+
+			if press_and_repeat(.BACKSPACE) {
+				if ctrl_pressed || alt_pressed do buffer_delete_word(command_window)
+				else do buffer_delete_char(command_window)
+			}
+
+			for key != 0 {
+				if is_char_supported(rune(key)) do buffer_insert_char(command_window, rune(key))
+				key = rl.GetCharPressed()
+			}
+
+			if p.keymap.vim_state.last_command == "select" {
+				cmd := string(p.status_line.command_window.buffer.data[:])
+				start := p.keymap.vim_state.pattern_selection_start
+				end := p.keymap.vim_state.pattern_selection_end
+				clear(&p.current_window.temp_match_ranges)
+				if start < end && end <= len(p.current_window.buffer.data) {
+					selected_text := p.current_window.buffer.data[start:end]
+					clear(&p.current_window.temp_match_ranges)
+					if len(cmd) > 0 {
+						p.current_window.temp_match_ranges = find_all_occurrences(selected_text, cmd)
+					}
+				} else {
+					clear(&p.current_window.temp_match_ranges)
+				}
+			}
+
+			if p.keymap.vim_state.last_command == "search" {
+				cmd := string(p.status_line.command_window.buffer.data[:])
+				pattern := strings.trim_space(cmd)
+				clear(&p.current_window.temp_match_ranges)
+				if len(pattern) > 0 {
+					full_text := p.current_window.buffer.data[:]
+					occurrences := find_all_occurrences(full_text, pattern)
+					defer delete(occurrences)
+					for occ in occurrences {
+						append(&p.current_window.temp_match_ranges, occ)
+					}
+				}
+			}
 		}
 
-		if press_and_repeat(.BACKSPACE) {
-			if ctrl_pressed || alt_pressed do buffer_delete_word(command_window)
-			else do buffer_delete_char(command_window)
-		}
-
-		for key != 0 {
-			if is_char_supported(rune(key)) do buffer_insert_char(command_window, rune(key))
-			key = rl.GetCharPressed()
-		}
-
-		if p.keymap.vim_state.last_command == "select" {
-		    cmd := string(p.status_line.command_window.buffer.data[:])
-	        start := p.keymap.vim_state.pattern_selection_start
-	        end := p.keymap.vim_state.pattern_selection_end
-	        clear(&p.current_window.temp_match_ranges)
-	        if start < end && end <= len(p.current_window.buffer.data) {
-	            selected_text := p.current_window.buffer.data[start:end]
-	            clear(&p.current_window.temp_match_ranges)
-	            if len(cmd) > 0 {
-	                p.current_window.temp_match_ranges = find_all_occurrences(selected_text, cmd)
-	            }
-	        } else {
-	            clear(&p.current_window.temp_match_ranges)
-	        }
-		}
-		
-		if p.keymap.vim_state.last_command == "search" {
-	        cmd := string(p.status_line.command_window.buffer.data[:])
-	        pattern := strings.trim_space(cmd)
-	        clear(&p.current_window.temp_match_ranges)
-	        if len(pattern) > 0 {
-	            full_text := p.current_window.buffer.data[:]
-	            occurrences := find_all_occurrences(full_text, pattern)
-	            defer delete(occurrences)
-	            for occ in occurrences {
-	                append(&p.current_window.temp_match_ranges, occ)
-	            }
-	        } 
-	    }
-		
-	case .COMMAND_NORMAL:
+		case .COMMAND_NORMAL:
 		using p.status_line
 
 		shift_pressed := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
@@ -634,7 +700,7 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 			p.status_line.command_window.cursor.pos = 0
 		}
 
-		if mode == .COMMAND_NORMAL do mode = .COMMAND
+		mode = .COMMAND
 	case .COMMAND_NORMAL:
 		assert(mode == .COMMAND, "We can only enter command normal mode from command insert mode")
 		status_line_clear_message(&p.status_line)
@@ -676,22 +742,23 @@ change_mode :: proc(p: ^Pulse, target_mode: Vim_Mode) {
 	case .VISUAL_BLOCK:
 		visual_block_anchor_line = cursor.line
 		visual_block_anchor_col =
-			cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
+		cursor.preferred_col if cursor.preferred_col != -1 else cursor.col
 		clear(&additional_cursors)
 		mode = .VISUAL_BLOCK
 	}
 }
 
 get_out_of_command_mode :: proc(p: ^Pulse) {
-	if p.keymap.vim_state.last_command == "select" {
-		p.current_window.mode = .VISUAL
-	}
+	using p.keymap.vim_state
+
+	if last_command == "select" do p.current_window.mode = .VISUAL
 	else do p.current_window.mode = .NORMAL
 	clear(&p.status_line.command_window.buffer.data)
 	p.status_line.command_window.cursor.pos = 0
-    p.keymap.vim_state.last_command = ""
-    clear(&p.current_window.temp_match_ranges)
-    clear(&p.keymap.vim_state.normal_cmd_buffer)
+	last_command = ""
+	clear(&p.current_window.temp_match_ranges)
+	clear(&normal_cmd_buffer)
+	reset_replace_state(p)
 }
 
 append_right_motion :: proc(p: ^Pulse) {
@@ -892,4 +959,48 @@ search_move_to_previous :: proc(p: ^Pulse) {
     p.current_window.searched_text = strings.clone(pattern, context.allocator) // Persistent storage.
     p.current_window.highlight_searched = true
     p.current_window.highlight_timer = 0.0
+}
+
+@(private)
+replace_current_match :: proc(p: ^Pulse) {
+    using p.keymap.vim_state
+    if replace_current_idx >= len(replace_matches) do return
+    match := replace_matches[replace_current_idx]
+    start, end := match[0], match[1]
+    buffer_delete_range(p.current_window, start, end)
+	if len(replace_replacement) > 0 {
+		buffer_insert_text_at(p.current_window, start, replace_replacement)
+	}
+
+    // Adjust subsequent matches
+    offset := len(replace_replacement) - (end - start)
+    for i in replace_current_idx + 1 ..< len(replace_matches) {
+        replace_matches[i][0] += offset
+        replace_matches[i][1] += offset
+    }
+}
+
+@(private)
+move_to_next_match :: proc(p: ^Pulse) {
+    using p.keymap.vim_state
+    replace_current_idx += 1
+    if replace_current_idx >= len(replace_matches) {
+        status_line_log(&p.status_line, "Replace completed")
+		get_out_of_command_mode(p)
+    } else {
+        match := replace_matches[replace_current_idx]
+        p.current_window.cursor.pos = match[0]
+        p.current_window.cursor.line = get_line_from_pos(p.current_window.buffer, match[0])
+        p.current_window.cursor.col = match[0] - p.current_window.buffer.line_starts[p.current_window.cursor.line]
+        p.status_line.current_prompt = fmt.tprintf("replace '%s' with '%s'? (y/n/esc)", replace_pattern, replace_replacement)
+
+		p.current_window.searched_text = strings.clone(replace_pattern, context.allocator)
+        p.current_window.highlight_searched = true
+        p.current_window.highlight_timer = 0.0
+
+		clear(&p.current_window.temp_match_ranges)
+        for i in replace_current_idx..<len(replace_matches) {
+            append(&p.current_window.temp_match_ranges, replace_matches[i])
+        }
+    }
 }

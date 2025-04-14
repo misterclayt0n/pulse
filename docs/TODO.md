@@ -50,7 +50,7 @@ Emacs?
     - [x] Basic implementation.
     - [x] FIX: searching currently always looks for the first instance of a word in the entire buffer, instead of considering first the closest instance of the word next to the cursor.
     - [x] Some simple glowing UI effect (like when you search something in Focus).
-- [ ] Substitute (probably like Emacs as well).
+- [x] Substitute (probably like Emacs as well).
 - [ ] Drag and drop a file into the editor to open it.
 
 ### Windows

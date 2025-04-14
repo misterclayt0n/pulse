@@ -57,7 +57,8 @@ Known_Commands :: []string {
     "cap",
     "select",
     "search",
-    "ga"
+    "ga",
+    "replace",
 }
 
 is_command :: proc(window: ^Window, cmd: string) -> bool {
@@ -94,92 +95,94 @@ execute_normal_command :: proc(p: ^Pulse, cmd: string) {
 	case " w":
 		status_line_log(&p.status_line, "Saving file from leader w")
 
-	// Inner commands.
+		// Inner commands.
 
 	case "iw":
 		select_inner_word(p)
 	case "ciw":
 		change_inner_word(p)
 	case "i(":
-        select_inner_delimiter(p, '(')
-    case "i[":
-        select_inner_delimiter(p, '[')
-    case "i{":
-        select_inner_delimiter(p, '{')
-    case "i\"":
-        select_inner_delimiter(p, '"')
-    case "i'":
-        select_inner_delimiter(p, '\'')
-    case "ip":
-    	select_inner_paragraph(p)
-    case "ci(":
-        change_inner_delimiter(p, '(')
-    case "ci[":
-        change_inner_delimiter(p, '[')
-    case "ci{":
-        change_inner_delimiter(p, '{')
-    case "ci\"":
-        change_inner_delimiter(p, '"')
-    case "ci'":
-        change_inner_delimiter(p, '\'')
-    case "cip":
-    	change_inner_paragraph(p)
-    case "di(":
-        delete_inner_delimiter(p, '(')
-    case "di[":
-        delete_inner_delimiter(p, '[')
-    case "di{":
-        delete_inner_delimiter(p, '{')
-    case "di\"":
-        delete_inner_delimiter(p, '"')
-    case "di'":
-        delete_inner_delimiter(p, '\'')
-    case "dip":
-    	delete_inner_paragraph(p)
-    case "diw": 
-	    delete_inner_word(p)
+		select_inner_delimiter(p, '(')
+	case "i[":
+		select_inner_delimiter(p, '[')
+	case "i{":
+		select_inner_delimiter(p, '{')
+	case "i\"":
+		select_inner_delimiter(p, '"')
+	case "i'":
+		select_inner_delimiter(p, '\'')
+	case "ip":
+		select_inner_paragraph(p)
+	case "ci(":
+		change_inner_delimiter(p, '(')
+	case "ci[":
+		change_inner_delimiter(p, '[')
+	case "ci{":
+		change_inner_delimiter(p, '{')
+	case "ci\"":
+		change_inner_delimiter(p, '"')
+	case "ci'":
+		change_inner_delimiter(p, '\'')
+	case "cip":
+		change_inner_paragraph(p)
+	case "di(":
+		delete_inner_delimiter(p, '(')
+	case "di[":
+		delete_inner_delimiter(p, '[')
+	case "di{":
+		delete_inner_delimiter(p, '{')
+	case "di\"":
+		delete_inner_delimiter(p, '"')
+	case "di'":
+		delete_inner_delimiter(p, '\'')
+	case "dip":
+		delete_inner_paragraph(p)
+	case "diw": 
+		delete_inner_word(p)
 
-	// Around commands.
+		// Around commands.
 
-    case "a(":
-        select_around_delimiter(p, '(')
-    case "a[":
-        select_around_delimiter(p, '[')
-    case "a{":
-        select_around_delimiter(p, '{')
-    case "a\"":
-        select_around_delimiter(p, '"')
-    case "a'":
-        select_around_delimiter(p, '\'')
-    case "da(":
-        delete_around_delimiter(p, '(')
-    case "da[":
-        delete_around_delimiter(p, '[')
-    case "da{":
-        delete_around_delimiter(p, '{')
-    case "da\"":
-        delete_around_delimiter(p, '"')
-    case "da'":
-        delete_around_delimiter(p, '\'')
-    case "ca(":
-        change_around_delimiter(p, '(')
-    case "ca[":
-        change_around_delimiter(p, '[')
-    case "ca{":
-        change_around_delimiter(p, '{')
-    case "ca\"":
-        change_around_delimiter(p, '"')
-    case "ca'":
-        change_around_delimiter(p, '\'')
-    case "ap":
-        select_inner_paragraph(p)
-    case "dap":
-        delete_inner_paragraph(p)
-    case "cap":
-        change_inner_paragraph(p)
-    case "select":
-    	assert(p.current_window.mode == .VISUAL || p.current_window.mode == .VISUAL_LINE)
-	    select_command(p)
+	case "a(":
+		select_around_delimiter(p, '(')
+	case "a[":
+		select_around_delimiter(p, '[')
+	case "a{":
+		select_around_delimiter(p, '{')
+	case "a\"":
+		select_around_delimiter(p, '"')
+	case "a'":
+		select_around_delimiter(p, '\'')
+	case "da(":
+		delete_around_delimiter(p, '(')
+	case "da[":
+		delete_around_delimiter(p, '[')
+	case "da{":
+		delete_around_delimiter(p, '{')
+	case "da\"":
+		delete_around_delimiter(p, '"')
+	case "da'":
+		delete_around_delimiter(p, '\'')
+	case "ca(":
+		change_around_delimiter(p, '(')
+	case "ca[":
+		change_around_delimiter(p, '[')
+	case "ca{":
+		change_around_delimiter(p, '{')
+	case "ca\"":
+		change_around_delimiter(p, '"')
+	case "ca'":
+		change_around_delimiter(p, '\'')
+	case "ap":
+		select_inner_paragraph(p)
+	case "dap":
+		delete_inner_paragraph(p)
+	case "cap":
+		change_inner_paragraph(p)
+	case "select":
+		assert(p.current_window.mode == .VISUAL || p.current_window.mode == .VISUAL_LINE)
+		select_command(p)
+	case "replace":
+		replace_command(p)
 	case "search":
 		search_command(p)
 	case "ga":
@@ -197,7 +200,8 @@ execute_command :: proc(p: ^Pulse) {
 	// Handle different commands like "select".
 	if p.keymap.vim_state.last_command == "select" do handle_select_command(p, cmd)
 	if p.keymap.vim_state.last_command == "search" do handle_search_command(p, cmd)
-	
+	if p.keymap.vim_state.last_command == "replace" do handle_replace_command(p, cmd)
+
 	else {
 		switch cmd {
 		case "w":
@@ -224,6 +228,7 @@ execute_command :: proc(p: ^Pulse) {
 		case:
 			status_line_log(&p.status_line, "Unknown command: %s", cmd)
 		}
+        get_out_of_command_mode(p)
 	}
 }
 
@@ -445,43 +450,83 @@ change_around_delimiter :: proc(p: ^Pulse, delim: rune) {
     }
 }
 
+//
+// Commands controllers kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+//
+
 @(private)
 search_command :: proc(p: ^Pulse) {
 	p.status_line.current_prompt = SEARCH_COMMAND_STRING
-	p.current_window.mode = .COMMAND
-    p.keymap.vim_state.command_normal = false
-    p.keymap.vim_state.last_command = "search"
-    clear(&p.status_line.command_window.buffer.data)
-    p.status_line.command_window.cursor.pos = 0
-    clear(&p.current_window.temp_match_ranges)
+	change_mode(p, .COMMAND)
+	p.keymap.vim_state.command_normal = false
+	p.keymap.vim_state.last_command = "search"
+	clear(&p.status_line.command_window.buffer.data)
+	p.status_line.command_window.cursor.pos = 0
+	clear(&p.current_window.temp_match_ranges)
+}
+
+@(private)
+replace_command :: proc(p: ^Pulse) {
+	using p.current_window
+
+	if mode == .VISUAL {
+		status_line_log(&p.status_line, "visual mode replace")
+		start := min(cursor.sel, cursor.pos)
+		end := max(cursor.sel, cursor.pos) + 1
+		p.keymap.vim_state.replace_sel_start = start
+		p.keymap.vim_state.replace_sel_end = end
+	} else if mode == .VISUAL_LINE {
+		current_line := cursor.line
+		sel_line := get_line_from_pos(buffer, cursor.sel)
+		start_line := min(sel_line, current_line)
+		end_line := max(sel_line, current_line)
+		start := buffer.line_starts[start_line]
+		end := len(buffer.data)
+		if end_line < len(buffer.line_starts) - 1 {
+			end = buffer.line_starts[end_line + 1]
+		}
+		p.keymap.vim_state.replace_sel_start = start
+		p.keymap.vim_state.replace_sel_end = end
+	}
+
+	p.keymap.vim_state.replace_stage = 1 // Pattern input stage.
+	p.keymap.vim_state.last_command = "replace"
+	p.status_line.current_prompt = REPLACE_COMMAND_STRING
+	change_mode(p, .COMMAND)
+	clear(&p.status_line.command_window.buffer.data)
+	p.status_line.command_window.cursor.pos = 0
 }
 
 @(private)
 select_command :: proc(p: ^Pulse) {
 	sel := p.current_window.cursor.sel
-    pos := p.current_window.cursor.pos
-    start := min(sel, pos)
-    end := max(sel, pos)
-    buffer_len := len(p.current_window.buffer.data)
-    
-    // If selecting to the end, clamp end to buffer length.
-    if end == buffer_len {
-        end = buffer_len
-    } else if end < buffer_len {
-        end += 1 // Exclusive end for slicing, only if not at buffer end.
-    }
-    
-    p.keymap.vim_state.pattern_selection_start = start
-    p.keymap.vim_state.pattern_selection_end = end
-    
-    // Prompt for pattern in status line.
-    p.status_line.current_prompt = SELECT_COMMAND_STRING
-    p.current_window.mode = .COMMAND
-    p.keymap.vim_state.command_normal = false
-    p.keymap.vim_state.last_command = "select"
-    clear(&p.status_line.command_window.buffer.data)
-    p.status_line.command_window.cursor.pos = len(p.status_line.command_window.buffer.data)
+	pos := p.current_window.cursor.pos
+	start := min(sel, pos)
+	end := max(sel, pos)
+	buffer_len := len(p.current_window.buffer.data)
+
+	// If selecting to the end, clamp end to buffer length.
+	if end == buffer_len {
+		end = buffer_len
+	} else if end < buffer_len {
+		end += 1 // Exclusive end for slicing, only if not at buffer end.
+	}
+
+	p.keymap.vim_state.pattern_selection_start = start
+	p.keymap.vim_state.pattern_selection_end = end
+
+	// Prompt for pattern in status line.
+	p.status_line.current_prompt = SELECT_COMMAND_STRING
+	change_mode(p, .COMMAND)
+	p.keymap.vim_state.command_normal = false
+	p.keymap.vim_state.last_command = "select"
+	clear(&p.status_line.command_window.buffer.data)
+	p.status_line.command_window.cursor.pos = len(p.status_line.command_window.buffer.data)
 }
+
+//
+// Commands services KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK
+//
 
 handle_search_command :: proc(p: ^Pulse, cmd: string) {
     pattern := strings.trim_space(cmd)
@@ -596,6 +641,54 @@ handle_select_command :: proc(p: ^Pulse, cmd: string) {
     clear(&p.current_window.temp_match_ranges) 
 }
 
+handle_replace_command :: proc(p: ^Pulse, cmd: string) {
+	using p.keymap.vim_state
+	switch replace_stage {
+	case 1: 
+		replace_pattern = strings.clone(cmd, context.temp_allocator)
+		replace_stage = 2 // Go to next stage.
+		p.status_line.current_prompt = fmt.tprintf("Replace '%s' with:", replace_pattern)
+		clear(&p.status_line.command_window.buffer.data)
+		p.status_line.command_window.cursor.pos = 0
+	case 2: 
+        replace_replacement = strings.clone(cmd, context.allocator)
+        start := replace_sel_start
+        end := replace_sel_end
+        selected_text := p.current_window.buffer.data[start:end]
+        matches := find_all_occurrences(selected_text, replace_pattern)
+
+        // Adjust match positions to absolute buffer offsets.
+        for &m in matches {
+            m[0] += start
+            m[1] += start
+        }
+
+        replace_matches = matches
+        replace_current_idx = 0
+        if len(matches) > 0 {
+            replace_stage = 3 // Move to interactive stage.
+            current_match := matches[0]
+            p.current_window.cursor.pos = current_match[0]
+            p.current_window.cursor.line = get_line_from_pos(p.current_window.buffer, current_match[0])
+            p.current_window.cursor.col = current_match[0] - p.current_window.buffer.line_starts[p.current_window.cursor.line]
+            p.status_line.current_prompt = fmt.tprintf("Replace '%s' with '%s'? (y/n/esc)", replace_pattern, replace_replacement)
+
+            p.current_window.searched_text = strings.clone(replace_pattern, context.allocator)
+            p.current_window.highlight_searched = true
+            p.current_window.highlight_timer = 0.0
+
+            // Highlight all matches.
+            clear(&p.current_window.temp_match_ranges)
+            for m in matches {
+                append(&p.current_window.temp_match_ranges, m)
+            }
+        } else {
+            status_line_log(&p.status_line, "No matches found for '%s'", replace_pattern)
+            get_out_of_command_mode(p)
+        }
+	}
+}
+
 @(private)
 find_all_occurrences :: proc(text: []u8, pattern: string) -> [dynamic][2]int {
     ranges := make([dynamic][2]int, 0, 10)
@@ -635,4 +728,17 @@ find_all_occurrences :: proc(text: []u8, pattern: string) -> [dynamic][2]int {
     }
 
     return ranges
+}
+
+reset_replace_state :: proc(p: ^Pulse) {
+    using p.keymap.vim_state
+    replace_stage = 0
+    replace_pattern = ""
+    replace_replacement = ""
+    clear(&replace_matches)
+    replace_current_idx = 0
+    replace_sel_start = 0
+    replace_sel_end = 0
+    p.status_line.current_prompt = ""
+    clear(&p.current_window.temp_match_ranges)
 }
