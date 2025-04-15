@@ -36,6 +36,9 @@ I only have so far some general and simple ideas, so I'm just laying them out he
 ### Emacs
 Emacs?
 
+### Optimizations
+- [ ] Currently we use a single Arena to manage all the state of the editor, this will have to be refactored at some point, probably every buffer will contain it's own Arena, since it has most of the heavy memory usage anyways.
+
 ### Editing
 - [x] Zed style multiple cursors.
 - [x] Helix style multiple cursors.
